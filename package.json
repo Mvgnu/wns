@@ -112,9 +112,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.2.1",
     "null-loader": "^4.0.1",
-    "png-to-ico": "^2.1.8",
     "sharp": "^0.33.5",
-    "svg2png-cli": "^1.1.1",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "typescript": "^5"
