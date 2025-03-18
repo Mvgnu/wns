@@ -10,21 +10,39 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Get the path to a sport image or default if not found
+ * Get the image path for a specific sport
+ * @param sport - The sport value to get the image for
+ * @returns The path to the sport image or a default image if not found
  */
-function getSportImagePath(sportValue: string): string {
-  const normalizedSport = sportValue.toLowerCase().replace(/\s+/g, '-');
-  const fileName = `sport-${normalizedSport}.jpg`;
-  const imagePath = `/images/sports/${fileName}`;
-  
-  // Check if the file exists on the filesystem
-  const fullPath = path.join(process.cwd(), 'public', imagePath);
-  if (fs.existsSync(fullPath)) {
-    return imagePath;
+export function getSportImagePath(sport: string): string {
+  try {
+    if (!sport) return '/images/default-sport.jpg';
+    
+    // Normalize the sport name and create the filename with the 'sport-' prefix
+    const normalizedSport = sport.replace(/\s+/g, '_');
+    const imagePath = `/images/sports/sport-${normalizedSport}.jpg`;
+    
+    // Try alternate version with hyphens if needed
+    const alternateImagePath = `/images/sports/sport-${normalizedSport.replace(/_/g, '-')}.jpg`;
+    
+    // Check if the file exists in public directory
+    const publicDir = path.join(process.cwd(), 'public');
+    const imageFilePath = path.join(publicDir, imagePath.substring(1));
+    const alternateImageFilePath = path.join(publicDir, alternateImagePath.substring(1));
+    
+    if (fs.existsSync(imageFilePath)) {
+      return imagePath;
+    } else if (fs.existsSync(alternateImageFilePath)) {
+      return alternateImagePath;
+    }
+    
+    // Log message for debugging
+    console.log(`Sport image not found for ${sport}, using default. Tried:`, imagePath, alternateImagePath);
+    return '/images/default-sport.jpg';
+  } catch (error) {
+    console.error('Error finding sport image:', error);
+    return '/images/default-sport.jpg';
   }
-  
-  // Return default image if sport image doesn't exist
-  return '/images/default-sport.jpg';
 }
 
 /**

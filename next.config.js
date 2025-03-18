@@ -30,17 +30,7 @@ const nextConfig = {
     // your project has ESLint errors.
     ignoreDuringBuilds: true,
   },
-  // For demonstration only include the home page
-  pageExtensions: ['page.tsx', 'page.ts', 'page.jsx', 'page.js'],
-  experimental: {
-    // Only include the root page for demonstration
-    appDir: true,
-    // Get rid of dynamic server errors temporarily
-    instrumentationHook: false,
-  },
-  // Disable dynamic routes to make the build succeed
-  output: process.env.SKIP_DATABASE_CALLS ? 'export' : undefined,
-  // Don't attempt to use a database if we're in static export mode
+  // Environment variables
   env: {
     SKIP_DATABASE_CALLS: process.env.SKIP_DATABASE_CALLS === 'true' ? 'true' : 'false'
   }

@@ -16,16 +16,31 @@ const path_1 = __importDefault(require("path"));
  * Get the path to a sport image or default if not found
  */
 function getSportImagePath(sportValue) {
-    const normalizedSport = sportValue.toLowerCase().replace(/\s+/g, '-');
+    const normalizedSport = sportValue.toLowerCase().replace(/\s+/g, '_');
     const fileName = `sport-${normalizedSport}.jpg`;
     const imagePath = `/images/sports/${fileName}`;
-    // Check if the file exists on the filesystem
-    const fullPath = path_1.default.join(process.cwd(), 'public', imagePath);
-    if (fs_1.default.existsSync(fullPath)) {
-        return imagePath;
+    try {
+        // Check if the file exists on the filesystem
+        const fullPath = path_1.default.join(process.cwd(), 'public', 'images', 'sports', fileName);
+        if (fs_1.default.existsSync(fullPath)) {
+            return imagePath;
+        }
+        // If not found with underscores, try with hyphens
+        const normalizedSportHyphen = sportValue.toLowerCase().replace(/\s+/g, '-');
+        const fileNameHyphen = `sport-${normalizedSportHyphen}.jpg`;
+        const imagePathHyphen = `/images/sports/${fileNameHyphen}`;
+        const fullPathHyphen = path_1.default.join(process.cwd(), 'public', 'images', 'sports', fileNameHyphen);
+        if (fs_1.default.existsSync(fullPathHyphen)) {
+            return imagePathHyphen;
+        }
+        // Return default image if sport image doesn't exist
+        console.log(`Sport image not found for ${sportValue}, using default`);
+        return '/images/default-sport.jpg';
     }
-    // Return default image if sport image doesn't exist
-    return '/images/default-sport.jpg';
+    catch (error) {
+        console.error(`Error checking sport image for ${sportValue}:`, error);
+        return '/images/default-sport.jpg';
+    }
 }
 /**
  * Data fetching service for the homepage
