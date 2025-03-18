@@ -97,6 +97,16 @@ export async function GET(
             sport: true,
             image: true,
             isPrivate: true,
+            members: {
+              select: {
+                id: true,
+              }
+            },
+            _count: {
+              select: {
+                members: true,
+              }
+            }
           },
         },
         location: {

@@ -89,8 +89,20 @@ export default function MobileNavigation() {
         </div>
       )}
 
-      {/* Bottom mobile navigation bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+      {/* Main mobile navigation buttons - positioned at the bottom */}
+      <div 
+        className="md:hidden fixed left-0 right-0 bottom-0 w-full bg-white border-t border-gray-200 shadow-xl z-[99999]"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100000,
+          paddingBottom: 'env(safe-area-inset-bottom, 0)',
+          transform: 'translateZ(0)',
+          willChange: 'transform'
+        }}
+      >
         <div className="flex justify-around items-center h-16">
           {mainNavItems.slice(0, 5).map((item) => (
             <Link 

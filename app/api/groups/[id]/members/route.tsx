@@ -1,5 +1,3 @@
-'use server';
-
 export const dynamic = "force-static";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";

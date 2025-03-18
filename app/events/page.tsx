@@ -374,7 +374,7 @@ export default async function EventsPage({
                   <Users className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-gray-900">{sportCounts.length}+</p>
+                  <p className="text-2xl font-bold text-gray-900">{sportCounts.length > 0 ? sportCounts.length : '0'}</p>
                   <p className="text-sm text-gray-500">Sportarten</p>
                 </div>
               </div>
@@ -447,12 +447,18 @@ export default async function EventsPage({
                         <div className="flex flex-wrap gap-2">
                           {category.items.slice(0, 6).map((sport: { value: string; label: string }) => {
                             const isSelected = selectedSportsArray.includes(sport.value);
-                            let href = new URL(window.location.href);
-                            let params = new URLSearchParams(href.search);
+                            
+                            // Server-side way to handle URL params
+                            const params = new URLSearchParams();
+                            
+                            // Copy existing search params
+                            Object.entries(searchParams || {}).forEach(([key, value]) => {
+                              if (value) params.set(key, value.toString());
+                            });
                             
                             if (isSelected) {
                               // Remove sport
-                              const newSports = selectedSportsArray.filter(s => s !== sport.value);
+                              const newSports = (selectedSportsArray || []).filter(s => s !== sport.value);
                               if (newSports.length) {
                                 params.set('sports', newSports.join(','));
                               } else {
@@ -460,7 +466,7 @@ export default async function EventsPage({
                               }
                             } else {
                               // Add sport
-                              const newSports = [...selectedSportsArray, sport.value];
+                              const newSports = [...(selectedSportsArray || []), sport.value];
                               params.set('sports', newSports.join(','));
                             }
                             

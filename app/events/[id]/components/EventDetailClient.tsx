@@ -11,8 +11,24 @@ import { Calendar, Clock, MapPin, Users, Share2, Heart, Edit, Trash2, ChevronLef
 import { format, formatDistanceToNow, differenceInMinutes } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "@/components/ui/use-toast";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import * as L from 'leaflet';
+
+// Fix for Leaflet marker icons
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+  iconUrl: icon.src,
+  shadowUrl: iconShadow.src,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 // Define the Event type
 interface EventType {
@@ -35,7 +51,10 @@ interface EventType {
     name: string;
     isPrivate: boolean;
     memberCount?: number;
-    members?: Array<{userId: string; role: string}>;
+    members?: Array<{userId: string; role: string}> | Array<{id: string}>;
+    _count?: {
+      members: number;
+    };
   };
   createdById?: string;
   createdBy?: {
@@ -269,44 +288,67 @@ export default function EventDetailClient({
 
               {/* Location tab */}
               <TabsContent value="location" className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                {event.location ? (
-                  <div>
-                    <h2 className="text-xl font-bold mb-4">Veranstaltungsort</h2>
-                    <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                      <h3 className="font-semibold text-lg">{event.location.name}</h3>
-                      {event.location.address && (
-                        <p className="text-gray-700 mt-1">{event.location.address}</p>
-                      )}
-                    </div>
-                    
-                    {(event.location.latitude && event.location.longitude) ? (
-                      <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden">
-                        <iframe
-                          width="100%"
-                          height="100%"
-                          style={{ border: 0 }}
-                          loading="lazy"
-                          allowFullScreen
-                          src={`https://www.google.com/maps/embed/v1/place?key=YOUR_API_KEY&q=${event.location.latitude},${event.location.longitude}`}
-                        ></iframe>
-                      </div>
-                    ) : (
-                      <div className="aspect-video bg-gray-100 rounded-lg flex items-center justify-center">
-                        <div className="text-center text-gray-500">
-                          <MapPin className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                          <p>Keine Kartenansicht verfügbar</p>
+                {event.location && (
+                  <Card className="mb-8 overflow-hidden border-gray-100">
+                    <CardHeader className="bg-gray-50 py-4">
+                      <div className="flex items-start gap-2">
+                        <MapPin className="h-5 w-5 text-green-600 mt-0.5" />
+                        <div>
+                          <CardTitle className="text-lg mb-1">{event.location.name}</CardTitle>
+                          {event.location.address && (
+                            <p className="text-gray-600 text-sm">{event.location.address}</p>
+                          )}
                         </div>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <MapPin className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <h3 className="text-lg font-medium">Kein Ort angegeben</h3>
-                    <p className="text-gray-500 max-w-md mx-auto mt-2">
-                      Für diese Veranstaltung wurde kein Ort festgelegt.
-                    </p>
-                  </div>
+                    </CardHeader>
+                    <div className="h-[350px] relative">
+                      {typeof window !== 'undefined' && event.location.latitude !== undefined && event.location.longitude !== undefined && (
+                        <MapContainer
+                          center={[event.location.latitude, event.location.longitude]}
+                          zoom={14}
+                          scrollWheelZoom={false}
+                          style={{ height: '100%', width: '100%' }}
+                        >
+                          <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          />
+                          <Marker position={[event.location.latitude, event.location.longitude]}>
+                            <Popup>
+                              <strong>{event.location.name}</strong>
+                              <br />
+                              {event.location.address}
+                            </Popup>
+                          </Marker>
+                        </MapContainer>
+                      )}
+                      {(event.location.latitude === undefined || event.location.longitude === undefined) && (
+                        <div className="flex items-center justify-center h-full bg-gray-50">
+                          <div className="text-center p-6">
+                            <MapPin className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                            <p className="text-gray-500">Keine Koordinaten für diesen Ort verfügbar</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <CardFooter className="py-3 border-t border-gray-100 bg-white">
+                      {event.location.latitude !== undefined && event.location.longitude !== undefined ? (
+                        <Button variant="link" className="text-green-600 p-0 h-auto" asChild>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${event.location.latitude},${event.location.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center"
+                          >
+                            In Google Maps öffnen
+                            <ExternalLink className="h-3.5 w-3.5 ml-1" />
+                          </a>
+                        </Button>
+                      ) : (
+                        <p className="text-gray-500 text-sm">Kein Google Maps Link verfügbar</p>
+                      )}
+                    </CardFooter>
+                  </Card>
                 )}
               </TabsContent>
 
@@ -370,7 +412,7 @@ export default function EventDetailClient({
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 truncate">{event.group.name}</p>
                       <p className="text-sm text-gray-500 truncate">
-                        {event.group.memberCount || 0} Mitglieder
+                        {event.group.members?.length || event.group._count?.members || event.group.memberCount || 0} Mitglieder
                       </p>
                     </div>
                     <Link 

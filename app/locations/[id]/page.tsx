@@ -1,6 +1,8 @@
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import LocationDetailClient from './components/LocationDetailClient';
 import { allSports } from '@/lib/sportsData';
 
@@ -39,6 +41,9 @@ export async function generateMetadata({ params }: LocationPageProps): Promise<M
 }
 
 export default async function LocationPage({ params }: LocationPageProps) {
+  const session = await getServerSession(authOptions);
+  const userId = session?.user?.id;
+
   const location = await prisma.location.findUnique({
     where: { id: params.id },
     include: {
@@ -68,6 +73,20 @@ export default async function LocationPage({ params }: LocationPageProps) {
           startTime: {
             gte: new Date(),
           },
+          // Only show events from public groups or where user is a member
+          OR: [
+            { group: { isPrivate: false } },
+            { group: null },
+            { 
+              group: { 
+                isPrivate: true,
+                OR: userId ? [
+                  { ownerId: userId },
+                  { members: { some: { id: userId } } }
+                ] : []
+              } 
+            }
+          ]
         },
         orderBy: {
           startTime: 'asc',
@@ -80,6 +99,13 @@ export default async function LocationPage({ params }: LocationPageProps) {
               image: true,
             },
           },
+          group: {
+            select: {
+              id: true,
+              name: true,
+              isPrivate: true
+            }
+          }
         },
         take: 5,
       },
@@ -100,9 +126,15 @@ export default async function LocationPage({ params }: LocationPageProps) {
   const sportObj = allSports.find(s => s.value === location.sport);
   const sportLabel = sportObj?.label || location.sport;
 
+  // Create a properly typed location object without the problematic coordinates field
+  const typedLocation = {
+    ...location,
+    coordinates: Array.isArray(location.coordinates) ? location.coordinates : undefined
+  };
+
   return (
     <LocationDetailClient 
-      location={location} 
+      location={typedLocation} 
       averageRating={averageRating}
       sportLabel={sportLabel}
     />
