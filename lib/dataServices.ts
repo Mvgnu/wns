@@ -6,16 +6,6 @@ import { getSportsByCategory } from './sportsData';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { Prisma } from '@prisma/client';
-import fs from 'fs';
-import path from 'path';
-
-/**
- * Get the image path for a specific sport
- */
-export async function getSportImagePath(sport: string): Promise<string> {
-  if (!sport) return '/images/default-sport.jpg';
-  return `/images/sports/sport-${sport}.jpg`;
-}
 
 /**
  * Data fetching service for the homepage
@@ -174,13 +164,11 @@ export async function getHomePageData() {
       })
     );
     
-    // Get all sport image paths from the local filesystem
+    // Create hardcoded sport image paths
     const sportImages: Record<string, string> = {};
-    await Promise.all(
-      Object.values(sportsByCategory).flat().map(async (sport) => {
-        sportImages[sport.value] = await getSportImagePath(sport.value);
-      })
-    );
+    Object.values(sportsByCategory).flat().forEach(sport => {
+      sportImages[sport.value] = `/images/sports/sport-${sport.value}.jpg`;
+    });
     
     return {
       sportsByCategory,
