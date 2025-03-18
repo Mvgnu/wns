@@ -322,12 +322,12 @@ export default function EventDetailClient({
                         className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <Avatar className="h-16 w-16 mb-2">
-                          <AvatarImage src={attendee.user.image} alt={attendee.user.name} />
+                          <AvatarImage src={attendee.user?.image || undefined} alt={attendee.user?.name || 'User'} />
                           <AvatarFallback>
-                            {attendee.user.name?.charAt(0) || "U"}
+                            {attendee.user?.name?.charAt(0) || "U"}
                           </AvatarFallback>
                         </Avatar>
-                        <p className="font-medium text-sm text-center line-clamp-1">{attendee.user.name}</p>
+                        <p className="font-medium text-sm text-center line-clamp-1">{attendee.user?.name || 'Unbekannt'}</p>
                       </div>
                     ))}
                   </div>
