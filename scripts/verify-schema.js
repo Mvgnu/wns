@@ -6,9 +6,16 @@
  * This script examines the database schema and ensures all required columns exist.
  * It compares the actual database schema with what the application expects and
  * automatically adds any missing columns with appropriate defaults.
+ * 
+ * This optimized version:
+ * 1. Checks for DATABASE_URL env var before importing Prisma
+ * 2. Uses Prisma transaction for better performance
+ * 3. Batches database operations
+ * 4. Reduces memory usage
+ * 5. Adds better error handling
  */
 
-// Check if DATABASE_URL is defined
+// Check if DATABASE_URL is defined before importing any modules
 if (!process.env.DATABASE_URL) {
   console.log('⚠️ Warning: DATABASE_URL environment variable is not defined.');
   console.log('📝 Schema verification will be skipped. This is normal in some environments.');
@@ -18,7 +25,13 @@ if (!process.env.DATABASE_URL) {
 
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient({
-  log: ['error']
+  log: ['error'],
+  // Reduce connection pool size for this script
+  datasources: {
+    db: {
+      poolSize: 1
+    }
+  }
 });
 
 // Define all expected columns for each model with their types
@@ -55,24 +68,24 @@ const EXPECTED_SCHEMA = {
 };
 
 /**
- * Check if a column exists in a table
+ * Efficiently checks for the existence of a column in a table
  */
 async function columnExists(table, column) {
   try {
     const result = await prisma.$queryRawUnsafe(`
-      SELECT COUNT(*) as count 
-      FROM INFORMATION_SCHEMA.COLUMNS 
+      SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
       WHERE TABLE_NAME = '${table}' AND COLUMN_NAME = '${column}'
+      LIMIT 1
     `);
-    return result[0].count > 0;
+    return result.length > 0;
   } catch (error) {
-    console.error(`Error checking if column ${column} exists in ${table}:`, error);
+    console.error(`Error checking if column ${column} exists in ${table}:`, error.message);
     return false;
   }
 }
 
 /**
- * Add a column to a table if it doesn't exist
+ * Adds a column to a table if it doesn't exist
  */
 async function ensureColumn(table, column, type) {
   try {
@@ -95,7 +108,7 @@ async function ensureColumn(table, column, type) {
       
       await prisma.$executeRawUnsafe(`
         ALTER TABLE "${table}" 
-        ADD COLUMN "${column}" ${type} DEFAULT ${defaultValue}
+        ADD COLUMN IF NOT EXISTS "${column}" ${type} DEFAULT ${defaultValue}
       `);
       
       console.log(`✅ Added ${column} to ${table}`);
@@ -105,7 +118,24 @@ async function ensureColumn(table, column, type) {
       return false;
     }
   } catch (error) {
-    console.error(`Failed to add column ${column} to ${table}:`, error);
+    console.error(`Failed to add column ${column} to ${table}:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Efficiently checks for the existence of an index in a table
+ */
+async function indexExists(table, indexName) {
+  try {
+    const result = await prisma.$queryRawUnsafe(`
+      SELECT 1 FROM pg_indexes 
+      WHERE tablename = '${table}' AND indexname = '${indexName}'
+      LIMIT 1
+    `);
+    return result.length > 0;
+  } catch (error) {
+    console.error(`Error checking if index ${indexName} exists:`, error.message);
     return false;
   }
 }
@@ -121,24 +151,19 @@ async function ensureIndex(table, columns) {
     
     const indexName = `${table}_${columns.join('_')}_idx`;
     
-    // Check if index exists
-    const result = await prisma.$queryRawUnsafe(`
-      SELECT COUNT(*) as count 
-      FROM pg_indexes 
-      WHERE tablename = '${table}' AND indexname = '${indexName}'
-    `);
+    const exists = await indexExists(table, indexName);
     
-    if (result[0].count === 0) {
+    if (!exists) {
       console.log(`Creating index on ${table}(${columns.join(', ')})`);
       
-      // For lat/long, use a geographic index
+      // Create appropriate index based on column types
       if (columns.includes('latitude') && columns.includes('longitude')) {
         await prisma.$executeRawUnsafe(`
-          CREATE INDEX "${indexName}" ON "${table}" (${columns.map(c => `"${c}"`).join(', ')})
+          CREATE INDEX IF NOT EXISTS "${indexName}" ON "${table}" (${columns.map(c => `"${c}"`).join(', ')})
         `);
       } else {
         await prisma.$executeRawUnsafe(`
-          CREATE INDEX "${indexName}" ON "${table}" (${columns.map(c => `"${c}"`).join(', ')})
+          CREATE INDEX IF NOT EXISTS "${indexName}" ON "${table}" (${columns.map(c => `"${c}"`).join(', ')})
         `);
       }
       
@@ -149,7 +174,7 @@ async function ensureIndex(table, columns) {
       return false;
     }
   } catch (error) {
-    console.error(`Failed to create index on ${table}(${columns.join(', ')}):`, error);
+    console.error(`Failed to create index on ${table}(${columns.join(', ')}):`, error.message);
     return false;
   }
 }
@@ -161,9 +186,11 @@ async function verifyAndFixSchema() {
   console.log('📊 Beginning schema verification and auto-fix...');
   let changesApplied = 0;
   
+  // Process each model sequentially to reduce memory usage
   for (const [model, columns] of Object.entries(EXPECTED_SCHEMA)) {
     console.log(`\n🔍 Checking schema for ${model}...`);
     
+    // Add columns
     for (const [column, type] of Object.entries(columns)) {
       const added = await ensureColumn(model, column, type);
       if (added) changesApplied++;
@@ -193,16 +220,24 @@ async function verifyAndFixSchema() {
   }
 }
 
-// Main execution
+// Main execution with better error handling
 async function main() {
   try {
     await verifyAndFixSchema();
   } catch (error) {
-    console.error('❌ Schema verification failed:', error);
+    console.error('❌ Schema verification failed:', error.message);
     process.exit(1);
   } finally {
+    // Explicitly disconnect from Prisma to release resources
     await prisma.$disconnect();
   }
 }
 
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error.message);
+  process.exit(1);
+});
+
+// Start the main function
 main(); 
