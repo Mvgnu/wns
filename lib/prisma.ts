@@ -94,6 +94,31 @@ if (isServer && process.env.NODE_ENV === 'production') {
   });
 }
 
+// If we're in a static build, return a mock Prisma client that doesn't try to connect to a database
+if (process.env.SKIP_DATABASE_CALLS === 'true') {
+  const mockPrismaClient = {
+    $connect: () => Promise.resolve(),
+    $disconnect: () => Promise.resolve(),
+    // Add other methods and models as needed with empty mock implementations
+    user: {
+      findUnique: () => Promise.resolve(null),
+      findMany: () => Promise.resolve([]),
+      create: () => Promise.resolve({}),
+      update: () => Promise.resolve({}),
+      // Add other methods as needed
+    },
+    post: {
+      findMany: () => Promise.resolve([]),
+      // Add other methods as needed
+    },
+    // Add other models as needed
+    // This is just a minimal mock to prevent database connection errors during build
+  };
+  
+  // @ts-ignore - We know this is not a complete implementation
+  global.prisma = mockPrismaClient as PrismaClient;
+}
+
 // Export the client
 export const prisma = prismaClient;
 
@@ -129,4 +154,6 @@ export async function withPrismaClient<T>(callback: (client: PrismaClient) => Pr
     console.error('Error in Prisma operation:', error);
     throw error;
   }
-} 
+}
+
+export default prisma; 

@@ -2,26 +2,56 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.prisma = void 0;
 exports.checkPrismaConnection = checkPrismaConnection;
+exports.withPrismaClient = withPrismaClient;
 // This is a standard module file - no 'use server' directive here
 const client_1 = require("@prisma/client");
 // Determine if we're running on the server or in the browser
 const isServer = typeof window === 'undefined';
-// PrismaClient is attached to the `global` object in development to prevent
-// exhausting your database connection limit.
-// In production, it's recommended to not attach to global object
+/**
+ * Optimized PrismaClient setup with:
+ * 1. Connection pooling configuration
+ * 2. Proper logging based on environment
+ * 3. Memory optimization for production
+ * 4. Connection reuse to prevent connection leaks
+ *
+ * This helps reduce memory usage and improve performance.
+ */
+// PrismaClient instance with optimized settings
 let prismaClient;
 // Only initialize PrismaClient on the server
 if (isServer) {
     if (process.env.NODE_ENV === 'production') {
+        // In production, optimize for memory usage and performance
         prismaClient = new client_1.PrismaClient({
             log: ['error'],
+            // Connection configuration through env vars
+            datasources: {
+                db: {
+                    url: process.env.DATABASE_URL,
+                }
+            }
+            // Note: Connection pooling is configured through DATABASE_URL connection string
+            // with ?connection_limit parameter or through Prisma connection pool settings
         });
     }
     else {
+        // In development, enable detailed logging and reuse connections
         if (!global.prisma) {
             global.prisma = new client_1.PrismaClient({
-                log: ['query', 'error', 'warn'],
+                log: ['error', 'warn'],
+                // More detailed logging can be enabled for debugging specific issues:
+                // log: [{ level: 'query', emit: 'event' }],
+                datasources: {
+                    db: {
+                        url: process.env.DATABASE_URL
+                    }
+                }
             });
+            // Uncomment to enable detailed query logging when needed
+            // global.prisma.$on('query', (e: any) => {
+            //   console.log(`Query: ${e.query}`)
+            //   console.log(`Duration: ${e.duration}ms`)
+            // });
         }
         prismaClient = global.prisma;
     }
@@ -42,6 +72,20 @@ else {
         }
     });
 }
+// Optimize connection handling on server startup and shutdown
+if (isServer && process.env.NODE_ENV === 'production') {
+    // Register shutdown handlers for clean database disconnection
+    process.on('SIGINT', async () => {
+        console.log('Closing Prisma connections');
+        await prismaClient.$disconnect();
+        process.exit(0);
+    });
+    process.on('SIGTERM', async () => {
+        console.log('Closing Prisma connections');
+        await prismaClient.$disconnect();
+        process.exit(0);
+    });
+}
 // Export the client
 exports.prisma = prismaClient;
 // Helper function to check if Prisma is connected - properly exported as async function
@@ -57,5 +101,22 @@ async function checkPrismaConnection() {
     catch (error) {
         console.error('Failed to connect to database:', error);
         return false;
+    }
+}
+/**
+ * Utility to ensure queries are properly disconnected
+ * Useful for long-running operations or scripts
+ */
+async function withPrismaClient(callback) {
+    if (!isServer) {
+        throw new Error('withPrismaClient can only be used on the server');
+    }
+    try {
+        // Reuse the existing client
+        return await callback(exports.prisma);
+    }
+    catch (error) {
+        console.error('Error in Prisma operation:', error);
+        throw error;
     }
 }

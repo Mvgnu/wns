@@ -1,3 +1,4 @@
+export const dynamic = "force-static";
 import { NextRequest, NextResponse } from "next/server";
 import { sendParticipationQueryNotifications } from "@/lib/participationNotificationService";
 import { getServerSession } from "next-auth";

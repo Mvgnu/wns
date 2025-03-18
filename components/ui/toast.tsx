@@ -14,7 +14,7 @@ type ToastActionElement = React.ReactElement<{
   onClick: () => void;
 }>;
 
-type ToastProps = {
+type InternalToastProps = {
   id: string;
   title?: React.ReactNode;
   description?: React.ReactNode;
@@ -43,11 +43,11 @@ type ActionType = typeof actionTypes;
 type Action =
   | {
       type: ActionType["ADD_TOAST"];
-      toast: Omit<ToastProps, "id" | "open" | "onOpenChange">;
+      toast: Omit<InternalToastProps, "id" | "open" | "onOpenChange">;
     }
   | {
       type: ActionType["UPDATE_TOAST"];
-      toast: Partial<Omit<ToastProps, "id" | "open" | "onOpenChange">> & { id: string };
+      toast: Partial<Omit<InternalToastProps, "id" | "open" | "onOpenChange">> & { id: string };
     }
   | {
       type: ActionType["DISMISS_TOAST"];
@@ -59,7 +59,7 @@ type Action =
     };
 
 interface State {
-  toasts: ToastProps[];
+  toasts: InternalToastProps[];
 }
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -124,12 +124,12 @@ function dispatch(action: Action) {
   });
 }
 
-type Toast = Omit<ToastProps, "id" | "open" | "onOpenChange">;
+type Toast = Omit<InternalToastProps, "id" | "open" | "onOpenChange">;
 
 function toast(props: Toast) {
   const id = genId();
 
-  const update = (props: ToastProps) =>
+  const update = (props: InternalToastProps) =>
     dispatch({
       type: actionTypes.UPDATE_TOAST,
       toast: { ...props, id },
