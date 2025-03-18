@@ -18,32 +18,17 @@ export async function getSportImagePath(sport: string): Promise<string> {
   try {
     if (!sport) return '/images/default-sport.jpg';
     
-    // Normalize the sport name and create the filename with the 'sport-' prefix
+    console.log(`Looking for image for sport: ${sport}`);
+    
+    // Just return the expected path without checking file existence
+    // This is more reliable in production and Next.js builds
     const normalizedSport = sport.replace(/\s+/g, '_');
     const imagePath = `/images/sports/sport-${normalizedSport}.jpg`;
     
-    // Try alternate version with hyphens if needed
-    const alternateImagePath = `/images/sports/sport-${normalizedSport.replace(/_/g, '-')}.jpg`;
+    // Log for debugging
+    console.log(`Using image path: ${imagePath}`);
     
-    // Check if the file exists in public directory
-    const publicDir = path.join(process.cwd(), 'public');
-    const imageFilePath = path.join(publicDir, imagePath.substring(1));
-    const alternateImageFilePath = path.join(publicDir, alternateImagePath.substring(1));
-    
-    // Use Promise-based file existence check instead of synchronous fs.existsSync
-    try {
-      await fs.promises.access(imageFilePath);
-      return imagePath;
-    } catch {
-      try {
-        await fs.promises.access(alternateImageFilePath);
-        return alternateImagePath;
-      } catch {
-        // Log message for debugging
-        console.log(`Sport image not found for ${sport}, using default. Tried:`, imagePath, alternateImagePath);
-        return '/images/default-sport.jpg';
-      }
-    }
+    return imagePath;
   } catch (error) {
     console.error('Error finding sport image:', error);
     return '/images/default-sport.jpg';
