@@ -1,0 +1,15 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "@next/next/no-img-element": "off",
+    "@typescript-eslint/no-unused-vars": ["warn", { 
+      "varsIgnorePattern": "^_", 
+      "argsIgnorePattern": "^_" 
+    }],
+    "react/no-unescaped-entities": "off",
+    "no-console": "off",
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/ban-ts-comment": "off",
+    "@typescript-eslint/no-non-null-assertion": "off"
+  }
+} 

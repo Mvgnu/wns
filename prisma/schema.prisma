@@ -1,0 +1,516 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // User profile information
+  bio           String?
+  location      String?
+  sports        String[]  // Array of sports interests
+  
+  // Enhanced location data
+  latitude      Float?
+  longitude     Float?
+  locationName  String?
+  city          String?
+  state         String?
+  country       String?
+  zipCode       String?
+  
+  // User preferences for recommendations
+  interestTags  String[]  // Tags representing user interests
+  preferredRadius Int?    // Preferred radius for recommendations in km
+  activityLevel String?   // "low", "medium", "high"
+  
+  // User preferences
+  notificationPreferences NotificationPreferences?
+  
+  // Relationships
+  posts         Post[]
+  comments      Comment[]
+  ownedGroups   Group[]   @relation("GroupOwner")
+  memberGroups  Group[]   @relation("GroupMembers")
+  locations     Location[]
+  events        Event[]   @relation("EventOrganizer")
+  attendingEvents Event[] @relation("EventAttendees")
+  notifications Notification[]
+  likes         Like[]
+  locationReviews LocationReview[]
+  sentInvites     GroupInvite[] @relation("SentInvites")
+  receivedInvites GroupInvite[] @relation("ReceivedInvites")
+  
+  // New relationships for event reminders and participation
+  eventReminders EventReminder[]
+  participationResponses ParticipationResponse[]
+  instanceResponses EventInstanceResponse[]
+  
+  // Group admin relationship
+  adminGroups GroupAdmin[]
+  
+  // User device tokens for push notifications
+  deviceTokens UserDeviceToken[]
+
+  // Indexes for better query performance
+  @@index([name])
+  @@index([createdAt])
+  @@index([location])
+  @@index([latitude, longitude])
+  @@index([activityLevel])
+  @@index([city, state, country])
+}
+
+// Group model
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  image       String?
+  sport       String
+  location    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isPrivate   Boolean  @default(false)
+  inviteCode  String?  @unique
+  
+  // Enhanced location data
+  latitude    Float?
+  longitude   Float?
+  locationName String?
+  city        String?
+  state       String?
+  country     String?
+  zipCode     String?
+  
+  // Group categorization for recommendations
+  groupTags   String[]
+  activityLevel String? // "low", "medium", "high"
+
+  // Relationships
+  owner       User     @relation("GroupOwner", fields: [ownerId], references: [id])
+  ownerId     String
+  members     User[]   @relation("GroupMembers")
+  posts       Post[]
+  events      Event[]
+  invites     GroupInvite[]
+  admins      GroupAdmin[]
+
+  // Indexes for better query performance
+  @@index([name])
+  @@index([sport])
+  @@index([ownerId])
+  @@index([createdAt])
+  @@index([isPrivate])
+  @@index([inviteCode])
+  @@index([latitude, longitude])
+  @@index([city, state, country])
+  @@index([activityLevel])
+}
+
+// Post model
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  images    String[] // Array of image URLs
+  videos    String[] // Array of video URLs
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  group     Group?   @relation(fields: [groupId], references: [id])
+  groupId   String?
+  comments  Comment[]
+  likes     Like[]
+
+  // Indexes for better query performance
+  @@index([title])
+  @@index([authorId])
+  @@index([groupId])
+  @@index([createdAt])
+}
+
+// Comment model
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    String
+  parentId  String?  // For nested comments
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+
+  // Indexes for better query performance
+  @@index([authorId])
+  @@index([postId])
+  @@index([parentId])
+  @@index([createdAt])
+}
+
+// Like model
+model Like {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    String
+
+  @@unique([userId, postId]) // A user can only like a post once
+  // Indexes for better query performance
+  @@index([userId])
+  @@index([postId])
+  @@index([createdAt])
+}
+
+// Location model (for skate spots, trails, etc.)
+model Location {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  type        String   // e.g., "skatepark", "trail", "fishing spot"
+  sport       String   // e.g., "skating", "hiking", "fishing" (kept for backward compatibility)
+  sports      String[] // Array of sports for multi-sport locations
+  latitude    Float
+  longitude   Float
+  address     String?
+  images      String[] // Array of image URLs
+  rating      Float?   // Average rating
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // For line-based locations (trails, routes)
+  isLineBased Boolean  @default(false)
+  coordinates Json?    // Array of coordinates for line-based locations
+
+  // Relationships
+  addedBy     User     @relation(fields: [addedById], references: [id])
+  addedById   String
+  events      Event[]
+  reviews     LocationReview[]
+
+  // Indexes for better query performance
+  @@index([name])
+  @@index([type])
+  @@index([sport])
+  @@index([addedById])
+  @@index([createdAt])
+  @@index([latitude, longitude]) // Geospatial index
+}
+
+// Location Review model
+model LocationReview {
+  id          String   @id @default(cuid())
+  rating      Float
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  // Relationships
+  location    Location @relation(fields: [locationId], references: [id])
+  locationId  String
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+
+  @@unique([userId, locationId]) // A user can only review a location once
+  // Indexes for better query performance
+  @@index([userId])
+  @@index([locationId])
+  @@index([rating])
+  @@index([createdAt])
+}
+
+// Event model
+model Event {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?
+  startTime         DateTime
+  endTime           DateTime?
+  image             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Recurring event fields
+  isRecurring       Boolean  @default(false)
+  recurringPattern  String?  // weekly, monthly 
+  recurringDays     Int[]    // 0-6 for weekly (Sun-Sat), 1-31 for monthly
+  recurringEndDate  DateTime?
+  parentEventId     String?  // For recurring event instances, refers to the template event
+  
+  // Relationships
+  organizer         User     @relation("EventOrganizer", fields: [organizerId], references: [id])
+  organizerId       String
+  attendees         User[]   @relation("EventAttendees")
+  group             Group?   @relation(fields: [groupId], references: [id])
+  groupId           String?
+  location          Location? @relation(fields: [locationId], references: [id])
+  locationId        String?
+  
+  // New relationships for reminders and participation
+  reminders         EventReminder[]
+  participationResponses ParticipationResponse[]
+  instanceResponses EventInstanceResponse[]
+  
+  // Parent/child relationships for recurring events
+  parentEvent       Event?   @relation("RecurringEventInstances", fields: [parentEventId], references: [id])
+  childEvents       Event[]  @relation("RecurringEventInstances")
+
+  // Indexes for better query performance
+  @@index([title])
+  @@index([organizerId])
+  @@index([groupId])
+  @@index([locationId])
+  @@index([startTime])
+  @@index([createdAt])
+  @@index([isRecurring])
+  @@index([parentEventId])
+}
+
+// Event Reminder model
+model EventReminder {
+  id          String   @id @default(cuid())
+  reminderType String   // "participation_query", "attendance_reminder"
+  hoursBeforeEvent Int  // How many hours before the event to send the reminder
+  sentAt      DateTime? // When the reminder was actually sent
+  createdAt   DateTime @default(now())
+  
+  // Relationships
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId     String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  // Indexes for better query performance
+  @@index([eventId])
+  @@index([userId])
+  @@index([reminderType])
+  @@index([hoursBeforeEvent])
+  @@index([sentAt])
+}
+
+// Participation Response model
+model ParticipationResponse {
+  id           String    @id @default(cuid())
+  response     String    // "yes", "no", "maybe", "undetermined"
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  instanceDate DateTime? // For recurring events, tracks which instance this response is for
+  
+  // Relationships
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId      String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  
+  // A user can have multiple responses for the same event (one per instance)
+  // but only one per event+user combination without instanceDate
+  @@unique([eventId, userId]) 
+  
+  // A user can have only one response per event instance
+  @@unique([eventId, userId, instanceDate])
+  
+  // Indexes for better query performance
+  @@index([eventId])
+  @@index([userId])
+  @@index([response])
+  @@index([instanceDate])
+}
+
+// Notification model
+model Notification {
+  id          String   @id @default(cuid())
+  type        String   // e.g., "comment", "like", "event"
+  message     String
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  linkUrl     String?  // URL to redirect when clicking the notification (optional)
+  actorId     String?  // ID of the user who triggered the notification
+
+  // Relationships
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  relatedId   String?  // ID of the related entity (post, comment, etc.)
+
+  // Indexes for better query performance
+  @@index([userId])
+  @@index([type])
+  @@index([read])
+  @@index([createdAt])
+  @@index([relatedId])
+  @@index([actorId])
+}
+
+// New GroupInvite model for tracking group invitations
+model GroupInvite {
+  id          String   @id @default(cuid())
+  status      String   @default("pending") // pending, accepted, rejected
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+
+  // Relationships
+  group       Group    @relation(fields: [groupId], references: [id])
+  groupId     String
+  invitedBy   User     @relation("SentInvites", fields: [invitedById], references: [id])
+  invitedById String
+  invitedUser User     @relation("ReceivedInvites", fields: [invitedUserId], references: [id])
+  invitedUserId String
+
+  @@unique([groupId, invitedUserId]) // Prevent duplicate invites
+  @@index([groupId])
+  @@index([invitedById])
+  @@index([invitedUserId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Notification Preferences model
+model NotificationPreferences {
+  id                      String  @id @default(cuid())
+  emailNotifications      Boolean @default(true)
+  pushNotifications       Boolean @default(true)
+  eventReminders          Boolean @default(true)
+  participationQueries    Boolean @default(true)
+  reminderHoursBeforeEvent Int    @default(24)  // Default to 24 hours before event
+  
+  // New email notification preferences
+  emailEventInvites       Boolean @default(true)
+  emailEventReminders     Boolean @default(true)
+  emailGroupInvites       Boolean @default(true)
+  emailDirectMessages     Boolean @default(true)
+  emailWeeklyDigest       Boolean @default(false)
+  
+  // New push notification preferences
+  pushNewPosts            Boolean @default(true)
+  pushEventUpdates        Boolean @default(true)
+  pushLocationAlerts      Boolean @default(true)
+  
+  // Relationships
+  user                    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                  String  @unique
+  
+  // Indexes for better query performance
+  @@index([userId])
+}
+
+// GroupAdmin model for tracking group administrators
+model GroupAdmin {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Relationships
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  // A user can only be an admin of a group once
+  @@unique([groupId, userId])
+  
+  // Indexes for better query performance
+  @@index([groupId])
+  @@index([userId])
+}
+
+// New model for user device tokens (for push notifications)
+model UserDeviceToken {
+  id          String   @id @default(cuid())
+  deviceToken String   @unique
+  deviceType  String   // "ios", "android", "web"
+  createdAt   DateTime @default(now())
+  
+  // Relationships
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@index([userId])
+  @@index([deviceType])
+}
+
+// New model for email notifications log
+model EmailNotificationLog {
+  id          String   @id @default(cuid())
+  userId      String
+  email       String
+  type        String   // "event_reminder", "group_invite", etc.
+  sentAt      DateTime @default(now())
+  status      String   // "sent", "failed", "delivered", "opened"
+  relatedId   String?  // ID of related entity (event, group, etc.)
+  
+  @@index([userId])
+  @@index([email])
+  @@index([type])
+  @@index([sentAt])
+  @@index([status])
+  @@index([relatedId])
+}
+
+// New model for recommendation feedback
+model RecommendationFeedback {
+  id               String   @id @default(cuid())
+  userId           String
+  recommendationType String  // "group", "event", "location"
+  recommendedId    String   // ID of recommended entity
+  interaction      String   // "viewed", "clicked", "joined", "dismissed"
+  rating           Int?     // Optional user rating (1-5)
+  createdAt        DateTime @default(now())
+  
+  @@index([userId])
+  @@index([recommendationType])
+  @@index([recommendedId])
+  @@index([interaction])
+  @@index([createdAt])
+}
+
+// New model for recurring event instance responses
+model EventInstanceResponse {
+  id           String    @id @default(cuid())
+  response     String    // "yes", "no", "maybe"
+  date         DateTime  // The specific date of the recurring event instance
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  // Relationships
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId      String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  
+  // A user can have only one response per event instance date
+  @@unique([userId, eventId, date], name: "userId_eventId_date")
+  
+  // Indexes for better query performance
+  @@index([eventId])
+  @@index([userId])
+  @@index([response])
+  @@index([date])
+}
