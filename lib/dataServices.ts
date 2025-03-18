@@ -12,7 +12,7 @@ import path from 'path';
 /**
  * Get the image path for a specific sport
  */
-export function getSportImagePath(sport: string): string {
+export async function getSportImagePath(sport: string): Promise<string> {
   if (!sport) return '/images/default-sport.jpg';
   return `/images/sports/sport-${sport}.jpg`;
 }
@@ -176,9 +176,11 @@ export async function getHomePageData() {
     
     // Get all sport image paths from the local filesystem
     const sportImages: Record<string, string> = {};
-    Object.values(sportsByCategory).flat().forEach(sport => {
-      sportImages[sport.value] = getSportImagePath(sport.value);
-    });
+    await Promise.all(
+      Object.values(sportsByCategory).flat().map(async (sport) => {
+        sportImages[sport.value] = await getSportImagePath(sport.value);
+      })
+    );
     
     return {
       sportsByCategory,
