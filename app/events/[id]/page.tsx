@@ -15,6 +15,18 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import EventTimeline from '@/components/events/EventTimeline';
+import EventDetailClient from './components/EventDetailClient';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ChevronLeft, AlertTriangle } from 'lucide-react';
+
+// Simple loading spinner component
+function LoadingSpinner() {
+  return (
+    <div className="flex justify-center items-center h-[60vh]">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+    </div>
+  );
+}
 
 interface EventProps {
   params: Promise<{
@@ -70,19 +82,25 @@ export default function EventPage({ params }: EventProps) {
   
   if (loading) {
     return (
-      <div className="container mx-auto py-8 text-center">
-        <p>Lade Veranstaltung...</p>
+      <div className="container mx-auto py-16">
+        <LoadingSpinner />
       </div>
     );
   }
   
   if (error || !event) {
     return (
-      <div className="container mx-auto py-8 text-center">
-        <p className="text-red-500">{error || 'Veranstaltung nicht gefunden'}</p>
-        <Button className="mt-4" asChild>
-          <Link href="/events">Zurück zur Übersicht</Link>
-        </Button>
+      <div className="container mx-auto py-16 px-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 max-w-lg mx-auto text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-50 text-red-500 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" x2="12" y1="9" y2="13"></line><line x1="12" x2="12.01" y1="17" y2="17"></line></svg>
+          </div>
+          <h2 className="text-xl font-bold mb-2">Veranstaltung nicht gefunden</h2>
+          <p className="text-gray-600 mb-6">{error || 'Diese Veranstaltung existiert nicht oder wurde gelöscht.'}</p>
+          <Button asChild>
+            <Link href="/events">Zurück zur Übersicht</Link>
+          </Button>
+        </div>
       </div>
     );
   }
@@ -165,306 +183,12 @@ export default function EventPage({ params }: EventProps) {
   const isPast = eventDate < new Date();
   
   return (
-    <div className="container mx-auto py-8">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Event Header */}
-        <div className="lg:col-span-3">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-            <div className="relative h-64 w-full">
-              {event.image ? (
-                <Image
-                  src={event.image}
-                  alt={event.title}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="h-full w-full bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center">
-                  <Calendar className="h-24 w-24 text-white opacity-50" />
-                </div>
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-              <div className="absolute bottom-4 left-4 right-4 text-white">
-                <h1 className="text-3xl font-bold">{event.title}</h1>
-                <div className="flex items-center mt-2">
-                  <Calendar className="h-4 w-4 mr-1" />
-                  <span className="text-sm">
-                    {format(eventDate, 'PPP', { locale: de })}
-                    {eventEndDate && eventDate.toDateString() !== eventEndDate.toDateString() && 
-                      ` - ${format(eventEndDate, 'PPP', { locale: de })}`}
-                  </span>
-                  <span className="mx-2">•</span>
-                  <Clock className="h-4 w-4 mr-1" />
-                  <span className="text-sm">
-                    {format(eventDate, 'p', { locale: de })}
-                    {eventEndDate && ` - ${format(eventEndDate, 'p', { locale: de })}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-4 flex flex-wrap items-center justify-between gap-4 border-b dark:border-gray-700">
-              <div className="flex flex-col">
-                {event.locationName && (
-                  <div className="flex items-center text-gray-600 dark:text-gray-300">
-                    <MapPin className="h-4 w-4 mr-1" />
-                    <span>
-                      {event.locationId ? (
-                        <Link href={`/locations/${event.locationId}`} className="hover:underline">
-                          {event.locationName}
-                        </Link>
-                      ) : (
-                        event.locationName
-                      )}
-                    </span>
-                  </div>
-                )}
-                {event.group && (
-                  <div className="flex items-center text-gray-600 dark:text-gray-300 mt-1">
-                    <Users className="h-4 w-4 mr-1" />
-                    <Link href={`/groups/${event.group.id}`} className="hover:underline">
-                      {event.group.name}
-                    </Link>
-                  </div>
-                )}
-                {(event as any).joinRestriction === "groupOnly" && event.group && (
-                  <div className="flex items-center text-amber-600 dark:text-amber-400 mt-1">
-                    <Shield className="h-4 w-4 mr-1" />
-                    <span>Nur für Gruppenmitglieder</span>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex flex-wrap items-center gap-2">
-                {!isPast && !isOrganizer && (
-                  <Button 
-                    variant={isAttending ? "outline" : "default"}
-                    onClick={handleAttendClick}
-                    disabled={isLoading}
-                    className="flex items-center gap-1"
-                  >
-                    {isAttending ? (
-                      <>
-                        <X className="h-4 w-4" />
-                        Nicht teilnehmen
-                      </>
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4" />
-                        Teilnehmen
-                      </>
-                    )}
-                  </Button>
-                )}
-                
-                <Button variant="outline" size="icon" onClick={handleShareClick}>
-                  <Share2 className="h-4 w-4" />
-                </Button>
-                
-                {isOrganizer && (
-                  <>
-                    <Button variant="outline" size="icon" asChild>
-                      <Link href={`/events/${event.id}/edit`}>
-                        <Edit className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Event Details */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-            <Tabs defaultValue="details">
-              <div className="px-4 pt-4">
-                <TabsList className="w-full">
-                  <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
-                  <TabsTrigger value="attendees" className="flex-1">
-                    Teilnehmer ({attendeeCount})
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-              
-              <TabsContent value="details" className="p-4">
-                <div className="prose dark:prose-invert max-w-none">
-                  {event.description ? (
-                    <div dangerouslySetInnerHTML={{ __html: event.description }} />
-                  ) : (
-                    <p className="text-gray-500 dark:text-gray-400">
-                      Keine Beschreibung verfügbar.
-                    </p>
-                  )}
-                </div>
-                
-                {event.tags && event.tags.length > 0 && (
-                  <div className="mt-6">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Tags</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {event.tags.map((tag: string) => (
-                        <Badge key={tag} variant="secondary">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </TabsContent>
-              
-              <TabsContent value="attendees" className="p-4">
-                {event.attendees.length > 0 ? (
-                  <div className="space-y-4">
-                    {event.attendees.map((attendee: any) => (
-                      <div key={attendee.id} className="flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750">
-                        <Avatar className="h-10 w-10 mr-3">
-                          <AvatarImage src={attendee.image || undefined} />
-                          <AvatarFallback>{attendee.name?.charAt(0) || 'U'}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <Link href={`/profile/${attendee.id}`} className="font-medium hover:underline">
-                            {attendee.name || 'Anonymer Benutzer'}
-                          </Link>
-                          {attendee.id === event.organizer.id && (
-                            <Badge className="ml-2" variant="outline">Organisator</Badge>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                    Noch keine Teilnehmer.
-                  </p>
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-
-          {/* Recurring Event Timeline */}
-          {event.isRecurring && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden p-6">
-              <EventTimeline 
-                eventId={event.id}
-                title={event.title}
-                startTime={new Date(event.startTime)}
-                isRecurring={event.isRecurring}
-                recurringPattern={event.recurringPattern}
-                recurringDays={event.recurringDays}
-                recurringEndDate={event.recurringEndDate ? new Date(event.recurringEndDate) : undefined}
-              />
-            </div>
-          )}
-        </div>
-        
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Organizer */}
-          <Card>
-            <CardContent className="pt-6">
-              <h3 className="text-lg font-semibold mb-4">Organisator</h3>
-              <div className="flex items-center">
-                <Avatar className="h-10 w-10 mr-3">
-                  <AvatarImage src={event.organizer.image || undefined} />
-                  <AvatarFallback>{event.organizer.name?.charAt(0) || 'U'}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <Link href={`/profile/${event.organizer.id}`} className="font-medium hover:underline">
-                    {event.organizer.name || 'Anonymer Benutzer'}
-                  </Link>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Attendance Status */}
-          <Card>
-            <CardContent className="pt-6">
-              <h3 className="text-lg font-semibold mb-4">Teilnahmestatus</h3>
-              <div className="flex items-center justify-between">
-                <span>Sie sind:</span>
-                <Badge variant={isAttending ? "default" : "outline"}>
-                  {isAttending ? 'Teilnehmend' : 'Nicht teilnehmend'}
-                </Badge>
-              </div>
-              {!isPast && !isOrganizer && (
-                <Button 
-                  className="w-full mt-4"
-                  variant={isAttending ? "outline" : "default"}
-                  onClick={handleAttendClick}
-                  disabled={isLoading}
-                >
-                  {isAttending ? (
-                    <>
-                      <X className="h-4 w-4 mr-1" />
-                      Nicht teilnehmen
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4 mr-1" />
-                      Teilnehmen
-                    </>
-                  )}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-          
-          {/* Event Info */}
-          <Card>
-            <CardContent className="pt-6">
-              <h3 className="text-lg font-semibold mb-4">Veranstaltungsinfo</h3>
-              <div className="space-y-3">
-                <div className="flex items-start">
-                  <Calendar className="h-5 w-5 mr-2 mt-0.5 text-gray-500" />
-                  <div>
-                    <p className="font-medium">Datum & Uhrzeit</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {format(eventDate, 'PPP', { locale: de })}
-                      {eventEndDate && eventDate.toDateString() !== eventEndDate.toDateString() && (
-                        <><br />{format(eventEndDate, 'PPP', { locale: de })}</>
-                      )}
-                      <br />
-                      {format(eventDate, 'p', { locale: de })}
-                      {eventEndDate && ` - ${format(eventEndDate, 'p', { locale: de })}`}
-                    </p>
-                  </div>
-                </div>
-                
-                {event.locationName && (
-                  <div className="flex items-start">
-                    <MapPin className="h-5 w-5 mr-2 mt-0.5 text-gray-500" />
-                    <div>
-                      <p className="font-medium">Ort</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {event.locationId ? (
-                          <Link href={`/locations/${event.locationId}`} className="hover:underline">
-                            {event.locationName}
-                          </Link>
-                        ) : (
-                          event.locationName
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                
-                <div className="flex items-start">
-                  <Users className="h-5 w-5 mr-2 mt-0.5 text-gray-500" />
-                  <div>
-                    <p className="font-medium">Teilnehmer</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {attendeeCount} {attendeeCount === 1 ? 'Person' : 'Personen'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+    <EventDetailClient
+      event={event}
+      isAttending={isAttending}
+      attendeeCount={attendeeCount}
+      onAttendanceToggle={handleAttendClick}
+      isLoading={isLoading}
+    />
   );
 } 
