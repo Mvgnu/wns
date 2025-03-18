@@ -355,6 +355,7 @@ model Notification {
   createdAt   DateTime @default(now())
   linkUrl     String?  // URL to redirect when clicking the notification (optional)
   actorId     String?  // ID of the user who triggered the notification
+  requiresAction Boolean @default(false) // Indicates if this notification requires user action
 
   // Relationships
   user        User     @relation(fields: [userId], references: [id])
@@ -368,6 +369,7 @@ model Notification {
   @@index([createdAt])
   @@index([relatedId])
   @@index([actorId])
+  @@index([requiresAction])
 }
 
 // New GroupInvite model for tracking group invitations
