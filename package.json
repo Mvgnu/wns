@@ -5,7 +5,7 @@
   "scripts": {
     "dev:next": "next dev --turbopack",
     "dev": "tsc -p tsconfig.server.json && PORT=${PORT:-3000} node server.mjs",
-    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" tsc -p tsconfig.server.json && next build",
+    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=12288\" tsc -p tsconfig.server.json && next build",
     "build:server": "tsc -p tsconfig.server.json",
     "start:next": "next start -p ${PORT:-3001}",
     "start": "NODE_ENV=production PORT=${PORT:-3000} node server.mjs",

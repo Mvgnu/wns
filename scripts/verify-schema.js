@@ -8,6 +8,14 @@
  * automatically adds any missing columns with appropriate defaults.
  */
 
+// Check if DATABASE_URL is defined
+if (!process.env.DATABASE_URL) {
+  console.log('⚠️ Warning: DATABASE_URL environment variable is not defined.');
+  console.log('📝 Schema verification will be skipped. This is normal in some environments.');
+  console.log('✅ Schema verification skipped. No changes needed.');
+  process.exit(0); // Exit gracefully with success code
+}
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient({
   log: ['error']
