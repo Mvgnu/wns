@@ -1,21 +1,10 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { db } from '@/lib/db';
 import { notFound } from 'next/navigation';
-import { formatDistanceToNow } from 'date-fns';
-import { de } from 'date-fns/locale';
 import { Metadata } from 'next';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Users, Lock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import EventCard from '@/components/events/EventCard';
-import JoinGroupButton from '@/components/groups/JoinGroupButton';
-import LeaveGroupButton from '@/components/groups/LeaveGroupButton';
-import EventList from '@/components/events/EventList';
-import GroupMembersList from '@/components/groups/GroupMembersList';
-import GroupPostsList from '@/components/groups/GroupPostsList';
-import GroupClientWrapper from './GroupClientWrapper';
+import GroupDetailClient from './components/GroupDetailClient';
+import { allSports } from '@/lib/sportsData';
 
 type Props = {
   params: {
@@ -23,26 +12,11 @@ type Props = {
   };
 };
 
-// Adding type definition to handle Prisma schema limitations
-type GroupWithPrivacySettings = {
-  id: string;
-  name: string;
-  description?: string | null;
-  image?: string | null;
-  sport: string;
-  location?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  ownerId: string;
-  isPrivate: boolean;
-  inviteCode?: string | null;
-};
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const groupId = params.id;
   
   try {
-    const group = await prisma.group.findUnique({
+    const group = await db.group.findUnique({
       where: { id: groupId },
     });
 
@@ -53,8 +27,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     }
 
     return {
-      title: group.name,
-      description: group.description || `A group for ${group.sport} enthusiasts`,
+      title: `${group.name} | WNS Community`,
+      description: group.description || `Eine Community für ${group.sport}`,
     };
   } catch (error) {
     console.error('Error generating metadata:', error);
@@ -69,7 +43,7 @@ export default async function GroupPage({ params }: { params: { id: string } }) 
   const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
 
-  const group = await prisma.group.findUnique({
+  const group = await db.group.findUnique({
     where: { id: params.id },
     select: {
       id: true,
@@ -166,96 +140,35 @@ export default async function GroupPage({ params }: { params: { id: string } }) 
     notFound();
   }
 
+  // Find sport label from sport value
+  const sportLabel = allSports.find(s => s.value === group.sport)?.label || group.sport;
+
   const isOwner = userId === group.ownerId;
-  const isMember = group.members.some(member => member.id === userId);
+  const isMember = userId ? group.members.some(member => member.id === userId) : false;
+
+  // Prepare events with locationName
+  const events = group.events.map(event => ({
+    ...event,
+    locationName: event.location?.name,
+    locationId: event.location?.id
+  }));
+
+  // Prepare members list
+  const members = [
+    { ...group.owner, isOwner: true },
+    ...group.members.filter(m => m.id !== group.owner.id).map(m => ({ ...m, isOwner: false }))
+  ];
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Group Info */}
-        <div className="md:col-span-2">
-          <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-            {/* Add Group Image */}
-            <div className="mb-4 h-48 rounded-lg overflow-hidden bg-gray-100">
-              {group.image ? (
-                <img
-                  src={group.image}
-                  alt={group.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-blue-100 text-blue-600">
-                  <span className="text-4xl font-bold">{group.name.charAt(0)}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between mb-4">
-              <h1 className="text-3xl font-bold">{group.name}</h1>
-              {userId && (
-                <div className="flex gap-2">
-                  {!isMember && <JoinGroupButton groupId={group.id} isPrivate={group.isPrivate} isMember={isMember} />}
-                  {isMember && !isOwner && <LeaveGroupButton groupId={group.id} isMember={isMember} />}
-                  {isOwner && <GroupClientWrapper type="actions" groupId={group.id} isOwner={isOwner} />}
-                </div>
-              )}
-            </div>
-            <p className="text-gray-600 mb-4">{group.description}</p>
-            <div className="flex items-center gap-4 text-sm text-gray-500">
-              <div className="flex items-center gap-1">
-                <Users size={16} />
-                <span>{group.members.length} members</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Shield size={16} />
-                <span>{group.sport}</span>
-              </div>
-              {group.isPrivate && (
-                <div className="flex items-center gap-1">
-                  <Lock size={16} />
-                  <span>Private group</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <Tabs defaultValue="events" className="w-full">
-            <TabsList className="w-full">
-              <TabsTrigger value="events" className="flex-1">Events</TabsTrigger>
-              <TabsTrigger value="posts" className="flex-1">Posts</TabsTrigger>
-              <TabsTrigger value="members" className="flex-1">Members</TabsTrigger>
-            </TabsList>
-            <TabsContent value="events">
-              <GroupClientWrapper 
-                type="events" 
-                events={group.events.map(event => ({
-                  ...event,
-                  attendees: event.attendees || [],
-                  locationName: event.location?.name,
-                  locationId: event.location?.id
-                }))} 
-                userId={userId} 
-              />
-            </TabsContent>
-            <TabsContent value="posts">
-              <GroupPostsList 
-                posts={group.posts} 
-                groupId={group.id}
-                userId={userId}
-                isMember={isMember}
-              />
-            </TabsContent>
-            <TabsContent value="members">
-              <GroupMembersList 
-                members={[
-                  { ...group.owner, isOwner: true },
-                  ...group.members.filter(m => m.id !== group.owner.id).map(m => ({ ...m, isOwner: false }))
-                ]} 
-              />
-            </TabsContent>
-          </Tabs>
-        </div>
-      </div>
-    </div>
+    <GroupDetailClient 
+      group={group}
+      events={events}
+      posts={group.posts}
+      members={members}
+      isOwner={isOwner}
+      isMember={isMember}
+      userId={userId}
+      sportLabel={sportLabel}
+    />
   );
 } 
