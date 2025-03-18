@@ -1,75 +1,138 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as util from 'util';
 import * as crypto from 'crypto';
+import { execSync } from 'child_process';
 
 const prisma = new PrismaClient();
 
-// Define types for Unsplash API response
-interface UnsplashImage {
-  urls: {
-    regular: string;
-    small: string;
-    thumb: string;
+// Unsplash API credentials
+const UNSPLASH_ACCESS_KEY = 'd0EeF4h-pxmGEky32qBiTzZuEA3rTG7ly8AnDoH-INQ';
+
+// Ensure directories exist
+const UPLOADS_DIR = path.join(process.cwd(), '..', 'public', 'uploads');
+const IMAGES_DIR = path.join(UPLOADS_DIR, 'images');
+
+// Create directories if they don't exist
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
+
+// Cache for downloaded images by category
+const imageCache: Record<string, string[]> = {};
+
+/**
+ * Search Unsplash for images and download them to local filesystem
+ * Returns an array of local image paths
+ */
+function getImagesForCategory(category: string, count: number = 1): string[] {
+  // Check cache first
+  if (imageCache[category] && imageCache[category].length >= count) {
+    return imageCache[category].slice(0, count);
   }
-}
 
-interface UnsplashSearchResponse {
-  results: UnsplashImage[];
-}
-
-// Utility function to fetch images from Unsplash
-async function fetchUnsplashImages(query: string, count: number = 1): Promise<string[]> {
+  console.log(`Fetching ${count} images for ${category} from Unsplash...`);
+  
   try {
-    const response = await axios.get<UnsplashSearchResponse>('https://api.unsplash.com/search/photos', {
-      params: {
-        query,
-        per_page: count,
-        client_id: process.env.UNSPLASH_ACCESS_KEY || 'YmD3gR1P7UtO_w3XdpYWuN0Yp_5LlqTshYRoKoaPCIo', // Replace with your access key
-      },
-    });
-
-    if (response.data.results && response.data.results.length > 0) {
-      return response.data.results.map(image => image.urls.regular);
-    }
-    return [];
-  } catch (error) {
-    console.error('Error fetching images from Unsplash:', error);
-    return [];
-  }
-}
-
-// Utility function to download an image and store it locally
-async function downloadImage(url: string, category: string): Promise<string> {
-  try {
-    const response = await axios({
-      url,
-      method: 'GET',
-      responseType: 'arraybuffer'
-    });
+    // Search Unsplash for images using curl
+    const searchCommand = `curl -s "https://api.unsplash.com/search/photos?query=${encodeURIComponent(category)}&per_page=${count * 2}&client_id=${UNSPLASH_ACCESS_KEY}"`;
+    const searchResult = execSync(searchCommand).toString();
+    const searchData = JSON.parse(searchResult);
     
-    const fileId = crypto.randomUUID();
-    const fileExt = '.jpg';
-    const uploadDir = path.join(process.cwd(), '..', 'public', 'uploads', 'images');
-    
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    if (!searchData.results || searchData.results.length === 0) {
+      console.warn(`No images found for ${category}, using placeholder`);
+      return createPlaceholderImages(category, count);
     }
     
-    const fileName = `${fileId}-${category}${fileExt}`;
-    const filePath = path.join(uploadDir, fileName);
+    // Download each image to local filesystem
+    const downloadedImages = [];
     
-    fs.writeFileSync(filePath, response.data);
+    for (let i = 0; i < Math.min(count, searchData.results.length); i++) {
+      const imageUrl = searchData.results[i].urls.regular;
+      const fileId = crypto.randomUUID();
+      const fileName = `${fileId}-${category.replace(/\s+/g, '-')}.jpg`;
+      const filePath = path.join(IMAGES_DIR, fileName);
+      
+      console.log(`Downloading image for ${category} to ${filePath}...`);
+      
+      try {
+        // Download image using curl
+        execSync(`curl -s "${imageUrl}" -o "${filePath}"`);
+        
+        // Check if file was created and has size
+        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
+          const relativePath = `/uploads/images/${fileName}`;
+          downloadedImages.push(relativePath);
+        } else {
+          console.warn(`Failed to download image for ${category}, file empty or not created`);
+        }
+      } catch (error) {
+        console.error(`Error downloading image for ${category}:`, error);
+      }
+    }
     
-    return `/uploads/images/${fileName}`;
+    // If we have images, cache them
+    if (downloadedImages.length > 0) {
+      imageCache[category] = downloadedImages;
+      return downloadedImages.slice(0, count);
+    }
+    
+    // Fall back to placeholders if downloads failed
+    return createPlaceholderImages(category, count);
+    
   } catch (error) {
-    console.error('Error downloading image:', error);
-    return '';
+    console.error(`Error in getImagesForCategory for ${category}:`, error);
+    return createPlaceholderImages(category, count);
   }
+}
+
+/**
+ * Create placeholder images for when Unsplash fails
+ */
+function createPlaceholderImages(category: string, count: number = 1): string[] {
+  console.log(`Creating ${count} placeholder images for ${category}...`);
+  
+  const placeholders = [];
+  const placeholderDir = path.join(process.cwd(), '..', 'public', 'images', 'placeholders');
+  
+  // Create placeholder directory if it doesn't exist
+  if (!fs.existsSync(placeholderDir)) {
+    fs.mkdirSync(placeholderDir, { recursive: true });
+  }
+  
+  for (let i = 0; i < count; i++) {
+    const id = crypto.randomUUID().substring(0, 8);
+    const fileName = `${category.replace(/\s+/g, '-')}-${id}.jpg`;
+    const filePath = path.join(placeholderDir, fileName);
+    
+    // Generate a color based on the category for visual distinction
+    const hash = crypto.createHash('md5').update(category).digest('hex');
+    const color = hash.substring(0, 6);
+    
+    try {
+      // Download a placeholder colored rectangle
+      execSync(`curl -s "https://via.placeholder.com/800x600/${color}/FFFFFF?text=${encodeURIComponent(category)}" -o "${filePath}"`);
+      
+      // Check if file was created and has size
+      if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
+        placeholders.push(`/images/placeholders/${fileName}`);
+      }
+    } catch (error) {
+      console.error(`Error creating placeholder for ${category}:`, error);
+    }
+  }
+  
+  // If we couldn't create any placeholders, return a hard-coded path that will at least not break the database
+  if (placeholders.length === 0) {
+    return ['/images/default-placeholder.jpg'];
+  }
+  
+  return placeholders;
 }
 
 // Sports list for seed data
@@ -223,8 +286,8 @@ async function main() {
     const city = cities[Math.floor(Math.random() * cities.length)];
     
     // Fetch image from Unsplash
-    const images = await fetchUnsplashImages(`${sport.name} sport`, 1);
-    const imageUrl = images.length > 0 ? images[0] : `https://source.unsplash.com/random/?${sport.name}`;
+    const imageUrls = getImagesForCategory(`${sport.name} sport`, 1);
+    const imageUrl = imageUrls[0];
     
     // Create group
     const group = await prisma.group.create({
@@ -293,8 +356,8 @@ async function main() {
       const addedBy = interestedUsers[Math.floor(Math.random() * interestedUsers.length)];
       
       // Fetch image from Unsplash
-      const images = await fetchUnsplashImages(`${sport.name} location`, 1);
-      const imageUrl = images.length > 0 ? images[0] : `https://source.unsplash.com/random/?${sport.name},location`;
+      const imageUrls = getImagesForCategory(`${sport.name} location`, 1);
+      const imageUrl = imageUrls[0];
       
       // Determine location type
       let locationType = 'spot';
@@ -396,10 +459,19 @@ async function main() {
       },
     });
     
-    const attendeeCount = Math.floor(Math.random() * groupMembers.length) + 1;
-    const attendees = groupMembers.slice(0, attendeeCount);
+    // Make sure we have at least one attendee (the organizer)
+    const attendeeIds = [organizer.id];
     
-    // Create event
+    // Add more random attendees
+    if (groupMembers.length > 1) {
+      const additionalAttendees = groupMembers
+        .filter(m => m.id !== organizer.id)
+        .slice(0, Math.floor(Math.random() * (groupMembers.length - 1)));
+      
+      attendeeIds.push(...additionalAttendees.map(a => a.id));
+    }
+    
+    // Create event with guaranteed attendees
     const event = await prisma.event.create({
       data: {
         title: `Past ${group.sport} Event at ${location.name}`,
@@ -417,8 +489,11 @@ async function main() {
           connect: { id: location.id },
         },
         attendees: {
-          connect: attendees.map(a => ({ id: a.id })),
+          connect: attendeeIds.map(id => ({ id })),
         },
+      },
+      include: {
+        attendees: true,
       },
     });
     
@@ -455,13 +530,22 @@ async function main() {
       },
     });
     
-    const attendeeCount = Math.floor(Math.random() * groupMembers.length) + 1;
-    const attendees = groupMembers.slice(0, attendeeCount);
+    // Make sure we have at least one attendee (the organizer)
+    const attendeeIds = [organizer.id];
+    
+    // Add more random attendees
+    if (groupMembers.length > 1) {
+      const additionalAttendees = groupMembers
+        .filter(m => m.id !== organizer.id)
+        .slice(0, Math.floor(Math.random() * (groupMembers.length - 1)));
+      
+      attendeeIds.push(...additionalAttendees.map(a => a.id));
+    }
     
     // Decide if this is a recurring event
     const isRecurring = Math.random() > 0.7;
     
-    // Create event
+    // Create event with guaranteed attendees
     const event = await prisma.event.create({
       data: {
         title: `${isRecurring ? 'Weekly ' : ''}${group.sport.charAt(0).toUpperCase() + group.sport.slice(1)} ${Math.random() > 0.5 ? 'Session' : 'Meetup'} at ${location.name}`,
@@ -483,13 +567,16 @@ async function main() {
           connect: { id: location.id },
         },
         attendees: {
-          connect: attendees.map(a => ({ id: a.id })),
+          connect: attendeeIds.map(id => ({ id })),
         },
+      },
+      include: {
+        attendees: true,
       },
     });
     
     // Create participation responses for some non-attending members
-    const nonAttendees = groupMembers.filter(m => !attendees.some(a => a.id === m.id));
+    const nonAttendees = groupMembers.filter(m => !attendeeIds.includes(m.id));
     
     for (const member of nonAttendees) {
       if (Math.random() > 0.5) {
@@ -504,7 +591,7 @@ async function main() {
     }
     
     // Create event reminders for some attendees
-    for (const attendee of attendees) {
+    for (const attendeeId of attendeeIds) {
       if (Math.random() > 0.7) {
         await prisma.eventReminder.create({
           data: {
@@ -512,7 +599,7 @@ async function main() {
             hoursBeforeEvent: [12, 24][Math.floor(Math.random() * 2)],
             sentAt: Math.random() > 0.5 ? new Date() : null,
             event: { connect: { id: event.id } },
-            user: { connect: { id: attendee.id } },
+            user: { connect: { id: attendeeId } },
           }
         });
       }
@@ -545,8 +632,8 @@ async function main() {
       const author = groupMembers[Math.floor(Math.random() * groupMembers.length)];
       
       // Fetch image from Unsplash
-      const images = await fetchUnsplashImages(`${group.sport}`, 1);
-      const imageUrl = images.length > 0 ? images[0] : `https://source.unsplash.com/random/?${group.sport}`;
+      const imageUrls = getImagesForCategory(group.sport, 1);
+      const imageUrl = imageUrls[0];
       
       // Create post
       const post = await prisma.post.create({
@@ -679,57 +766,61 @@ async function main() {
     // Skip past events
     if (event.startTime < currentDate) continue;
     
-    // Get attendees
-    const attendees = await prisma.user.findMany({
-      where: { attendingEvents: { some: { id: event.id } } },
-    });
-    
-    // Create event reminder notifications for attendees
-    for (const attendee of attendees) {
-      if (Math.random() > 0.3) continue; // Only create for some attendees
-      
-      await prisma.notification.create({
-        data: {
-          type: 'EVENT_REMINDER',
-          message: `Reminder: "${event.title}" is coming up on ${event.startTime.toLocaleDateString()}`,
-          read: Math.random() > 0.7,
-          createdAt: new Date(currentDate.getTime() - (Math.floor(Math.random() * 3) + 1) * 24 * 60 * 60 * 1000), // 1-3 days ago
-          linkUrl: `/events/${event.id}`,
-          user: {
-            connect: { id: attendee.id },
-          },
-          relatedId: event.id,
-        },
-      });
-    }
-    
-    // Create attendance query notifications for group members not yet responded
-    if (event.groupId) {
-      const group = await prisma.group.findUnique({
-        where: { id: event.groupId },
-        include: { members: true },
-      });
-      
-      if (group) {
-        const nonRespondedMembers = group.members.filter(m => 
-          !attendees.some(a => a.id === m.id) && 
-          Math.random() > 0.5 // Only create for some members
-        );
+    // Since we've included attendees when creating events, we can access them directly
+    // Make sure attendees exists before trying to iterate
+    if (event.attendees && event.attendees.length > 0) {
+      // Create event reminder notifications for attendees
+      for (const attendee of event.attendees) {
+        if (Math.random() > 0.3) continue; // Only create for some attendees
         
-        for (const member of nonRespondedMembers) {
-          await prisma.notification.create({
-            data: {
-              type: 'EVENT_ATTENDANCE_QUERY',
-              message: `Will you attend "${event.title}" on ${event.startTime.toLocaleDateString()}?`,
-              read: Math.random() > 0.8,
-              createdAt: new Date(currentDate.getTime() - (Math.floor(Math.random() * 5) + 1) * 24 * 60 * 60 * 1000), // 1-5 days ago
-              linkUrl: `/events/${event.id}`,
-              user: {
-                connect: { id: member.id },
-              },
-              relatedId: event.id,
+        await prisma.notification.create({
+          data: {
+            type: 'EVENT_REMINDER',
+            message: `Reminder: "${event.title}" is coming up on ${event.startTime.toLocaleDateString()}`,
+            read: Math.random() > 0.7,
+            createdAt: new Date(currentDate.getTime() - (Math.floor(Math.random() * 3) + 1) * 24 * 60 * 60 * 1000), // 1-3 days ago
+            linkUrl: `/events/${event.id}`,
+            user: {
+              connect: { id: attendee.id },
             },
-          });
+            relatedId: event.id,
+            requiresAction: Math.random() > 0.7,
+          },
+        });
+      }
+      
+      // Create attendance query notifications for group members not yet responded
+      if (event.groupId) {
+        const group = await prisma.group.findUnique({
+          where: { id: event.groupId },
+          include: { members: true },
+        });
+        
+        if (group) {
+          // Get IDs of event attendees for filtering
+          const attendeeIds = event.attendees.map(a => a.id);
+          
+          const nonRespondedMembers = group.members.filter(m => 
+            !attendeeIds.includes(m.id) && 
+            Math.random() > 0.5 // Only create for some members
+          );
+          
+          for (const member of nonRespondedMembers) {
+            await prisma.notification.create({
+              data: {
+                type: 'EVENT_ATTENDANCE_QUERY',
+                message: `Will you attend "${event.title}" on ${event.startTime.toLocaleDateString()}?`,
+                read: Math.random() > 0.8,
+                createdAt: new Date(currentDate.getTime() - (Math.floor(Math.random() * 5) + 1) * 24 * 60 * 60 * 1000), // 1-5 days ago
+                linkUrl: `/events/${event.id}`,
+                user: {
+                  connect: { id: member.id },
+                },
+                relatedId: event.id,
+                requiresAction: true,
+              },
+            });
+          }
         }
       }
     }
