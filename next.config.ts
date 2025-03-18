@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
   images: {
     domains: [
       'images.unsplash.com',
+      'source.unsplash.com',
       'i.pravatar.cc',
       'res.cloudinary.com',
       'avatars.githubusercontent.com',
