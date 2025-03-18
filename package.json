@@ -5,7 +5,7 @@
   "scripts": {
     "dev:next": "next dev --turbopack",
     "dev": "tsc -p tsconfig.server.json && PORT=${PORT:-3000} node server.mjs",
-    "build": "tsc -p tsconfig.server.json && next build",
+    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" tsc -p tsconfig.server.json && next build",
     "build:server": "tsc -p tsconfig.server.json",
     "start:next": "next start -p ${PORT:-3001}",
     "start": "NODE_ENV=production PORT=${PORT:-3000} node server.mjs",
@@ -108,6 +108,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
+    "cross-env": "^7.0.3",
     "eslint": "^9",
     "eslint-config-next": "15.2.1",
     "null-loader": "^4.0.1",
