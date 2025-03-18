@@ -12,41 +12,23 @@ export default function ImprintPage() {
       
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-4">Angaben gemäß § 5 TMG</h2>
-        <p className="mb-2">WNS Community GmbH</p>
-        <p className="mb-2">Musterstraße 123</p>
-        <p className="mb-2">12345 Musterstadt</p>
+        <p className="mb-2">Magnus Ohle</p>
+        <p className="mb-2">Haaggasse 10</p>
+        <p className="mb-2">72070 Tübingen</p>
         <p className="mb-2">Deutschland</p>
       </section>
       
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-4">Kontakt</h2>
-        <p className="mb-2">Telefon: +49 123 456789</p>
-        <p className="mb-2">E-Mail: info@wns-community.de</p>
-      </section>
-      
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Vertretungsberechtigte</h2>
-        <p className="mb-2">Geschäftsführer: Max Mustermann</p>
-      </section>
-      
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Registereintrag</h2>
-        <p className="mb-2">Eintragung im Handelsregister</p>
-        <p className="mb-2">Registergericht: Amtsgericht Musterstadt</p>
-        <p className="mb-2">Registernummer: HRB 12345</p>
-      </section>
-      
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Umsatzsteuer-ID</h2>
-        <p className="mb-2">Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz:</p>
-        <p className="mb-2">DE 123456789</p>
+        <p className="mb-2">Telefon: +49 (0) 176 41495195</p>
+        <p className="mb-2">E-Mail: info@magnusohle.de</p>
       </section>
       
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-4">Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV</h2>
-        <p className="mb-2">Max Mustermann</p>
-        <p className="mb-2">Musterstraße 123</p>
-        <p className="mb-2">12345 Musterstadt</p>
+        <p className="mb-2">Magnus Ohle</p>
+        <p className="mb-2">Haaggasse 10</p>
+        <p className="mb-2">72070 Tübingen</p>
         <p className="mb-2">Deutschland</p>
       </section>
       
@@ -109,7 +91,7 @@ export default function ImprintPage() {
       </section>
       
       <p className="text-sm text-gray-500 mt-12">
-        Quelle: <a href="https://www.e-recht24.de" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">eRecht24</a>
+        Letzte Aktualisierung: {new Date().toLocaleDateString('de-DE', { year: 'numeric', month: 'long', day: 'numeric' })}
       </p>
     </div>
   );
