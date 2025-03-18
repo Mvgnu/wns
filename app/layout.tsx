@@ -55,9 +55,14 @@ export const metadata: Metadata = {
     follow: true,
   },
   icons: {
-    icon: "/favicon.ico",
-    apple: "/apple-icon.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" }
+    ],
+    apple: "/icons/apple-touch-icon.png",
+    shortcut: "/favicon.svg",
   },
+  manifest: "/manifest.json",
   metadataBase: new URL("https://wns-community.com"),
 };
 
@@ -68,6 +73,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de">
+      <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="alternate icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <link rel="manifest" href="/manifest.json" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
