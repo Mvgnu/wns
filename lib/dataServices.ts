@@ -14,7 +14,7 @@ import path from 'path';
  * @param sport - The sport value to get the image for
  * @returns The path to the sport image or a default image if not found
  */
-export function getSportImagePath(sport: string): string {
+export async function getSportImagePath(sport: string): Promise<string> {
   try {
     if (!sport) return '/images/default-sport.jpg';
     
@@ -30,15 +30,20 @@ export function getSportImagePath(sport: string): string {
     const imageFilePath = path.join(publicDir, imagePath.substring(1));
     const alternateImageFilePath = path.join(publicDir, alternateImagePath.substring(1));
     
-    if (fs.existsSync(imageFilePath)) {
+    // Use Promise-based file existence check instead of synchronous fs.existsSync
+    try {
+      await fs.promises.access(imageFilePath);
       return imagePath;
-    } else if (fs.existsSync(alternateImageFilePath)) {
-      return alternateImagePath;
+    } catch {
+      try {
+        await fs.promises.access(alternateImageFilePath);
+        return alternateImagePath;
+      } catch {
+        // Log message for debugging
+        console.log(`Sport image not found for ${sport}, using default. Tried:`, imagePath, alternateImagePath);
+        return '/images/default-sport.jpg';
+      }
     }
-    
-    // Log message for debugging
-    console.log(`Sport image not found for ${sport}, using default. Tried:`, imagePath, alternateImagePath);
-    return '/images/default-sport.jpg';
   } catch (error) {
     console.error('Error finding sport image:', error);
     return '/images/default-sport.jpg';
@@ -204,9 +209,11 @@ export async function getHomePageData() {
     
     // Get all sport image paths from the local filesystem
     const sportImages: Record<string, string> = {};
-    Object.values(sportsByCategory).flat().forEach(sport => {
-      sportImages[sport.value] = getSportImagePath(sport.value);
-    });
+    await Promise.all(
+      Object.values(sportsByCategory).flat().map(async (sport) => {
+        sportImages[sport.value] = await getSportImagePath(sport.value);
+      })
+    );
     
     return {
       sportsByCategory,

@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getSportImagePath = getSportImagePath;
 exports.getHomePageData = getHomePageData;
 // ^ Ensure server-side execution
 const prisma_1 = require("./prisma");
@@ -13,32 +14,42 @@ const auth_1 = require("@/lib/auth");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 /**
- * Get the path to a sport image or default if not found
+ * Get the image path for a specific sport
+ * @param sport - The sport value to get the image for
+ * @returns The path to the sport image or a default image if not found
  */
-function getSportImagePath(sportValue) {
-    const normalizedSport = sportValue.toLowerCase().replace(/\s+/g, '_');
-    const fileName = `sport-${normalizedSport}.jpg`;
-    const imagePath = `/images/sports/${fileName}`;
+async function getSportImagePath(sport) {
     try {
-        // Check if the file exists on the filesystem
-        const fullPath = path_1.default.join(process.cwd(), 'public', 'images', 'sports', fileName);
-        if (fs_1.default.existsSync(fullPath)) {
+        if (!sport)
+            return '/images/default-sport.jpg';
+        // Normalize the sport name and create the filename with the 'sport-' prefix
+        const normalizedSport = sport.replace(/\s+/g, '_');
+        const imagePath = `/images/sports/sport-${normalizedSport}.jpg`;
+        // Try alternate version with hyphens if needed
+        const alternateImagePath = `/images/sports/sport-${normalizedSport.replace(/_/g, '-')}.jpg`;
+        // Check if the file exists in public directory
+        const publicDir = path_1.default.join(process.cwd(), 'public');
+        const imageFilePath = path_1.default.join(publicDir, imagePath.substring(1));
+        const alternateImageFilePath = path_1.default.join(publicDir, alternateImagePath.substring(1));
+        // Use Promise-based file existence check instead of synchronous fs.existsSync
+        try {
+            await fs_1.default.promises.access(imageFilePath);
             return imagePath;
         }
-        // If not found with underscores, try with hyphens
-        const normalizedSportHyphen = sportValue.toLowerCase().replace(/\s+/g, '-');
-        const fileNameHyphen = `sport-${normalizedSportHyphen}.jpg`;
-        const imagePathHyphen = `/images/sports/${fileNameHyphen}`;
-        const fullPathHyphen = path_1.default.join(process.cwd(), 'public', 'images', 'sports', fileNameHyphen);
-        if (fs_1.default.existsSync(fullPathHyphen)) {
-            return imagePathHyphen;
+        catch (_a) {
+            try {
+                await fs_1.default.promises.access(alternateImageFilePath);
+                return alternateImagePath;
+            }
+            catch (_b) {
+                // Log message for debugging
+                console.log(`Sport image not found for ${sport}, using default. Tried:`, imagePath, alternateImagePath);
+                return '/images/default-sport.jpg';
+            }
         }
-        // Return default image if sport image doesn't exist
-        console.log(`Sport image not found for ${sportValue}, using default`);
-        return '/images/default-sport.jpg';
     }
     catch (error) {
-        console.error(`Error checking sport image for ${sportValue}:`, error);
+        console.error('Error finding sport image:', error);
         return '/images/default-sport.jpg';
     }
 }
@@ -185,9 +196,9 @@ async function getHomePageData() {
         }));
         // Get all sport image paths from the local filesystem
         const sportImages = {};
-        Object.values(sportsByCategory).flat().forEach(sport => {
-            sportImages[sport.value] = getSportImagePath(sport.value);
-        });
+        await Promise.all(Object.values(sportsByCategory).flat().map(async (sport) => {
+            sportImages[sport.value] = await getSportImagePath(sport.value);
+        }));
         return {
             sportsByCategory,
             groupsCount,
