@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, MapPin, Users, Share2, Edit, Trash2, Check, X } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Share2, Edit, Trash2, Check, X, Shield } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -104,7 +104,16 @@ export default function EventPage({ params }: EventProps) {
         },
       });
 
-      if (!res.ok) throw new Error('Teilnahmestatus konnte nicht aktualisiert werden');
+      if (!res.ok) {
+        const errorData = await res.json();
+        
+        // Handle specific errors
+        if (res.status === 403 && errorData.error?.includes('member of the group')) {
+          throw new Error('Sie müssen Mitglied der Gruppe sein, um an dieser Veranstaltung teilzunehmen');
+        }
+        
+        throw new Error('Teilnahmestatus konnte nicht aktualisiert werden');
+      }
 
       // Update state
       setIsAttending(!isAttending);
@@ -115,11 +124,11 @@ export default function EventPage({ params }: EventProps) {
         description: isAttending ? 'Sie wurden von der Teilnehmerliste entfernt' : 'Sie wurden zur Teilnehmerliste hinzugefügt',
         variant: 'default',
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Fehler beim Aktualisieren der Teilnahme:', error);
       toast({
         title: 'Fehler',
-        description: 'Teilnahmestatus konnte nicht aktualisiert werden',
+        description: error.message || 'Teilnahmestatus konnte nicht aktualisiert werden',
         variant: 'destructive',
       });
     } finally {
@@ -216,6 +225,12 @@ export default function EventPage({ params }: EventProps) {
                     <Link href={`/groups/${event.group.id}`} className="hover:underline">
                       {event.group.name}
                     </Link>
+                  </div>
+                )}
+                {(event as any).joinRestriction === "groupOnly" && event.group && (
+                  <div className="flex items-center text-amber-600 dark:text-amber-400 mt-1">
+                    <Shield className="h-4 w-4 mr-1" />
+                    <span>Nur für Gruppenmitglieder</span>
                   </div>
                 )}
               </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getSafeServerSession } from "@/lib/sessionHelper";
 import { sendNotificationToUser } from "@/lib/notificationService";
 
 // POST handler for joining an event
@@ -11,7 +12,7 @@ export async function POST(
 ) {
   try {
     // Ensure we have the eventId before proceeding
-    const eventId = params.id;
+    const { id: eventId } = params;
     if (!eventId) {
       return NextResponse.json(
         { error: "Event ID is required" },
@@ -19,7 +20,7 @@ export async function POST(
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const session = await getSafeServerSession();
     if (!session?.user) {
       return NextResponse.json(
         { error: "Unauthorized" },
@@ -39,6 +40,7 @@ export async function POST(
             name: true,
           },
         },
+        group: true
       },
     });
 
@@ -47,6 +49,29 @@ export async function POST(
         { error: "Event not found" },
         { status: 404 }
       );
+    }
+
+    // Access the join restriction directly (bypass TypeScript type checking)
+    const joinRestriction = (event as any).joinRestriction;
+    
+    // Check join restrictions for group-only events
+    if (joinRestriction === "groupOnly" && event.groupId) {
+      // Check if user is a member of the group
+      const isMember = await prisma.group.findFirst({
+        where: {
+          id: event.groupId,
+          members: {
+            some: { id: userId }
+          }
+        }
+      });
+      
+      if (!isMember) {
+        return NextResponse.json(
+          { error: "You must be a member of the group to join this event" },
+          { status: 403 }
+        );
+      }
     }
 
     // Check if user is already attending
@@ -110,7 +135,7 @@ export async function DELETE(
 ) {
   try {
     // Ensure we have the eventId before proceeding
-    const eventId = params.id;
+    const { id: eventId } = params;
     if (!eventId) {
       return NextResponse.json(
         { error: "Event ID is required" },
@@ -118,7 +143,7 @@ export async function DELETE(
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const session = await getSafeServerSession();
     if (!session?.user) {
       return NextResponse.json(
         { error: "Unauthorized" },

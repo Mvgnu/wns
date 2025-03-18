@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import EventCard from '@/components/events/EventCard';
+import EventAttendance from '@/components/events/EventAttendance';
 
 type Event = {
   id: string;
@@ -47,116 +48,29 @@ export default function GroupEventsClient({ events, userId }: GroupEventsClientP
       {events.map((event) => {
         // Ensure attendees exists and is an array
         const attendees = event.attendees || [];
-        const [isAttending, setIsAttending] = useState(
-          userId ? attendees.some(attendee => attendee.id === userId) : false
-        );
-        const [attendeeCount, setAttendeeCount] = useState(attendees.length);
-        const [isLoading, setIsLoading] = useState(false);
-        
         const isOrganizer = userId === event.organizer.id;
         
-        // Format the event object to match EventCard props
+        // Format the event object to match EventAttendance Event type
         const formattedEvent = {
           id: event.id,
           title: event.title,
-          description: event.description || undefined,
-          startTime: typeof event.startTime === 'string' ? event.startTime : new Date(event.startTime).toISOString(),
-          endTime: event.endTime ? (typeof event.endTime === 'string' ? event.endTime : new Date(event.endTime).toISOString()) : undefined,
-          location: event.locationName ? {
-            id: event.locationId || 'unknown',
-            name: event.locationName,
-          } : undefined,
+          description: event.description,
+          image: event.image,
+          startTime: typeof event.startTime === 'string' ? event.startTime : new Date(event.startTime),
+          endTime: event.endTime ? (typeof event.endTime === 'string' ? event.endTime : new Date(event.endTime)) : null,
+          locationName: event.locationName,
+          locationId: event.locationId,
+          organizer: event.organizer,
           attendees: attendees,
-          organizerId: event.organizer.id,
-          _count: {
-            attendees: attendeeCount
-          }
-        };
-        
-        const handleAttend = async () => {
-          if (!userId) {
-            toast({
-              title: "Not logged in",
-              description: "You must be logged in to attend events",
-              variant: "destructive",
-            });
-            return;
-          }
-          
-          setIsLoading(true);
-          
-          try {
-            const res = await fetch(`/api/events/${event.id}/attend`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            });
-            
-            if (!res.ok) throw new Error('Failed to update attendance status');
-            
-            setIsAttending(true);
-            setAttendeeCount(prev => prev + 1);
-            
-            toast({
-              title: 'You are now attending!',
-              description: 'You have been added to the attendee list',
-              variant: 'default',
-            });
-          } catch (error) {
-            console.error('Error updating attendance:', error);
-            toast({
-              title: 'Error',
-              description: 'Failed to update attendance status',
-              variant: 'destructive',
-            });
-          } finally {
-            setIsLoading(false);
-          }
-        };
-        
-        const handleLeave = async () => {
-          if (!userId) return;
-          
-          setIsLoading(true);
-          
-          try {
-            const res = await fetch(`/api/events/${event.id}/attend`, {
-              method: 'DELETE',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            });
-            
-            if (!res.ok) throw new Error('Failed to update attendance status');
-            
-            setIsAttending(false);
-            setAttendeeCount(prev => prev - 1);
-            
-            toast({
-              title: 'You are no longer attending',
-              description: 'You have been removed from the attendee list',
-              variant: 'default',
-            });
-          } catch (error) {
-            console.error('Error updating attendance:', error);
-            toast({
-              title: 'Error',
-              description: 'Failed to update attendance status',
-              variant: 'destructive',
-            });
-          } finally {
-            setIsLoading(false);
-          }
+          isRecurring: false // Assuming group events are not recurring
         };
         
         return (
-          <EventCard
+          <EventAttendance
             key={event.id}
             event={formattedEvent}
-            showActions={true}
-            showDescription={true}
-            showAttendees={true}
+            userId={userId}
+            instanceDate={undefined}
           />
         );
       })}

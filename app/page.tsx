@@ -12,6 +12,9 @@ export const dynamic = 'force-dynamic';
 
 // Define types for our data structure
 interface CategoryHighlight {
+  sport: string;
+  label: string;
+  description: string;
   topGroup: {
     id: string;
     name: string;
@@ -52,32 +55,40 @@ export default async function Home() {
     groupsCount: data.groupsCount,
     locationsCount: data.locationsCount,
     usersCount: data.usersCount,
+    sportImages: data.sportImages || {}, // Include the static sport images
     // Serialize complex Date objects in the data
     categoryHighlights: Object.fromEntries(
-      Object.entries(data.categoryHighlights).map(([category, highlight]) => {
-        const typedHighlight = highlight as CategoryHighlight;
-        return [
-          category,
-          {
-            topGroup: typedHighlight.topGroup ? {
-              ...typedHighlight.topGroup,
-              createdAt: typedHighlight.topGroup.createdAt?.toString(),
-              updatedAt: typedHighlight.topGroup.updatedAt?.toString(),
+      Object.entries(data.categoryHighlights).map(([category, highlights]) => {
+        // Ensure highlights is an array
+        const highlightsArray = Array.isArray(highlights) ? highlights : [];
+        
+        // Serialize each highlight in the array
+        const serializedHighlights = highlightsArray.map((highlight: CategoryHighlight) => {
+          return {
+            sport: highlight.sport,
+            label: highlight.label,
+            description: highlight.description,
+            topGroup: highlight.topGroup ? {
+              ...highlight.topGroup,
+              createdAt: highlight.topGroup.createdAt?.toString(),
+              updatedAt: highlight.topGroup.updatedAt?.toString(),
             } : null,
-            upcomingEvent: typedHighlight.upcomingEvent ? {
-              ...typedHighlight.upcomingEvent,
-              startTime: typedHighlight.upcomingEvent.startTime?.toString(),
-              endTime: typedHighlight.upcomingEvent.endTime?.toString(),
-              createdAt: typedHighlight.upcomingEvent.createdAt?.toString(),
-              updatedAt: typedHighlight.upcomingEvent.updatedAt?.toString(),
-              group: typedHighlight.upcomingEvent.group ? {
-                ...typedHighlight.upcomingEvent.group,
-                createdAt: typedHighlight.upcomingEvent.group.createdAt?.toString(),
-                updatedAt: typedHighlight.upcomingEvent.group.updatedAt?.toString(),
-              } : undefined
+            upcomingEvent: highlight.upcomingEvent ? {
+              ...highlight.upcomingEvent,
+              startTime: highlight.upcomingEvent.startTime?.toString(),
+              endTime: highlight.upcomingEvent.endTime?.toString(),
+              createdAt: highlight.upcomingEvent.createdAt?.toString(),
+              updatedAt: highlight.upcomingEvent.updatedAt?.toString(),
+              group: highlight.upcomingEvent.group ? {
+                ...highlight.upcomingEvent.group,
+                createdAt: highlight.upcomingEvent.group.createdAt?.toString(),
+                updatedAt: highlight.upcomingEvent.group.updatedAt?.toString(),
+              } : null
             } : null
-          }
-        ];
+          };
+        });
+        
+        return [category, serializedHighlights];
       })
     )
   };
@@ -89,5 +100,6 @@ export default async function Home() {
     locationsCount={serializedData.locationsCount}
     usersCount={serializedData.usersCount}
     categoryHighlights={serializedData.categoryHighlights}
+    sportImages={serializedData.sportImages}
   />;
 }

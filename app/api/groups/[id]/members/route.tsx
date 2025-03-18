@@ -342,58 +342,68 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const groupId = params.id;
+    if (!groupId) {
+      return new Response(JSON.stringify({ error: "Group ID is required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const session = await getServerSession(authOptions);
     if (!session?.user) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const userId = session.user.id;
-    const groupId = params.id;
 
-    // Check if the group exists
+    // Check if group exists
     const group = await prisma.group.findUnique({
       where: { id: groupId },
-      include: { owner: true },
     });
 
     if (!group) {
-      return NextResponse.json(
-        { error: "Group not found" },
-        { status: 404 }
+      return new Response(JSON.stringify({ error: "Group not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Check if user is the owner - owners can't leave their own group
+    if (group.ownerId === userId) {
+      return new Response(
+        JSON.stringify({
+          error: "Group owners cannot leave their own group. Transfer ownership first or delete the group.",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
-    // Check if user is trying to leave as the owner
-    if (group.owner.id === userId) {
-      return NextResponse.json(
-        { error: "Group owners cannot leave their own group; transfer ownership first" },
-        { status: 400 }
-      );
-    }
-
-    // Check if user is a member
-    const membership = await prisma.group.findFirst({
+    // Check if user is actually a member
+    const isMember = await prisma.group.findFirst({
       where: {
         id: groupId,
-        members: {
-          some: {
-            id: userId,
-          },
-        },
+        members: { some: { id: userId } },
       },
     });
 
-    if (!membership) {
-      return NextResponse.json(
-        { error: "You are not a member of this group" },
-        { status: 400 }
+    if (!isMember) {
+      return new Response(
+        JSON.stringify({ error: "You are not a member of this group" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
-    // Remove user from the group
+    // Remove the user from the group's members
     await prisma.group.update({
       where: { id: groupId },
       data: {
@@ -403,12 +413,46 @@ export async function DELETE(
       },
     });
 
-    return NextResponse.json({ success: true });
+    // Also check if user is a group admin and remove them if necessary
+    const isAdmin = await prisma.groupAdmin.findFirst({
+      where: {
+        groupId,
+        userId,
+      },
+    });
+
+    if (isAdmin) {
+      await prisma.groupAdmin.delete({
+        where: {
+          id: isAdmin.id,
+        },
+      });
+    }
+
+    // Notify the group owner
+    await prisma.notification.create({
+      data: {
+        type: "GROUP_MEMBER_LEFT",
+        message: `${session.user.name || "A user"} has left your group "${group.name}"`,
+        userId: group.ownerId,
+        actorId: userId,
+        read: false,
+        linkUrl: `/groups/${groupId}`,
+      },
+    });
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
     console.error("Error leaving group:", error);
-    return NextResponse.json(
-      { error: "Failed to leave group" },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ error: "Failed to leave group" }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     );
   }
 } 

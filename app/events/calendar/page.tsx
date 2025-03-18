@@ -43,13 +43,26 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EventList from '@/components/events/EventList';
+import EventAttendance from '@/components/events/EventAttendance';
 
 export default function CalendarPage() {
   const { data: session } = useSession();
-  const { data: calendarEvents, isLoading: eventsLoading } = useCalendarEvents(90); // Get 90 days of events
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  
+  // Calculate the start and end dates for the current month view (including adjacent month days shown in calendar)
+  const monthStart = React.useMemo(() => startOfMonth(currentMonth), [currentMonth]);
+  const monthEnd = React.useMemo(() => endOfMonth(currentMonth), [currentMonth]);
+  const calendarStart = React.useMemo(() => startOfWeek(monthStart, { locale: de }), [monthStart]);
+  const calendarEnd = React.useMemo(() => endOfWeek(monthEnd, { locale: de }), [monthEnd]);
+  
+  // Fetch events for the current calendar view
+  const { data: calendarEvents, isLoading: eventsLoading } = useCalendarEvents({
+    startDate: calendarStart,
+    endDate: calendarEnd
+  });
+  
   const { data: userGroups } = useGroups();
   
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedDateEvents, setSelectedDateEvents] = useState<any[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
@@ -285,13 +298,21 @@ export default function CalendarPage() {
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
             {selectedDateEvents.length > 0 ? (
               selectedDateEvents.map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  showDescription={true}
-                  showActions={true}
-                  showAttendees={true}
-                />
+                <div key={event.id}>
+                  <EventAttendance
+                    event={event}
+                    userId={session?.user?.id}
+                    instanceDate={
+                      event.isRecurringInstance ? 
+                        new Date(event.instanceDate) : 
+                        (event.isRecurring ? 
+                          // For regular recurring events, use the selectedDate
+                          new Date(selectedDate || new Date()) : 
+                          // For one-time events, don't pass instanceDate
+                          undefined)
+                    }
+                  />
+                </div>
               ))
             ) : (
               <p className="text-center text-muted-foreground py-4">
@@ -313,12 +334,17 @@ export default function CalendarPage() {
               </h3>
               <div className="space-y-2">
                 {events.map((event) => (
-                  <EventCard
+                  <EventAttendance
                     key={event.id}
                     event={event}
-                    showDescription={false}
-                    showActions={true}
-                    showAttendees={true}
+                    userId={session?.user?.id}
+                    instanceDate={
+                      event.isRecurringInstance ? 
+                        new Date(event.instanceDate) : 
+                        (event.isRecurring ? 
+                          new Date(parseISO(day)) : 
+                          undefined)
+                    }
                   />
                 ))}
               </div>

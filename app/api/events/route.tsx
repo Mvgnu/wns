@@ -34,7 +34,9 @@ const eventCreateSchema = z.object({
   recurringDays: z.array(z.number()).optional(),
   recurringEndDate: z.string().refine((value) => !value || !isNaN(Date.parse(value)), {
     message: "Recurring end date must be a valid date string",
-  }).optional().nullable(),
+  }).optional().nullable().transform(val => val === "" ? null : val),
+  // Who can join the event
+  joinRestriction: z.enum(["everyone", "groupOnly"]).default("everyone"),
 });
 
 // Schema for event update
@@ -61,7 +63,7 @@ const eventUpdateSchema = z.object({
   recurringDays: z.array(z.number()).optional(),
   recurringEndDate: z.string().refine((value) => !value || !isNaN(Date.parse(value)), {
     message: "Recurring end date must be a valid date string",
-  }).optional().nullable(),
+  }).optional().nullable().transform(val => val === "" ? null : val),
 });
 
 // Schema for attendance operations
@@ -563,11 +565,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create the event
+    // Extract eventType and prepare data for Prisma
+    const { eventType, ...eventData } = validatedData;
+    
     const event = await prisma.event.create({
       data: {
-        ...validatedData,
+        ...eventData,
         organizerId: user.id,
+        // Set joinRestriction if not specified
+        joinRestriction: validatedData.joinRestriction || "everyone",
         // Add the creator as an attendee automatically
         attendees: {
           connect: [{ id: user.id }]
@@ -605,7 +611,7 @@ export async function POST(req: NextRequest) {
               data: {
                 userId: member.id,
                 type: "NEW_GROUP_EVENT",
-                message: `New event "${event.title}" in ${event.group?.name}`,
+                message: `New event "${event.title}" in ${group.name}`,
                 read: false,
                 relatedId: event.id,
                 linkUrl: `/events/${event.id}`,
@@ -1001,9 +1007,9 @@ export async function PATCH(req: NextRequest) {
             participationResponses: {
               upsert: {
                 where: {
-                  userId_eventId: {
-                    userId: session.user.id,
-                    eventId: id
+                  eventId_userId: {
+                    eventId: id,
+                    userId: session.user.id
                   }
                 },
                 create: {

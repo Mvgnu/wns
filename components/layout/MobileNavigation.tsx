@@ -16,7 +16,8 @@ import {
   User, 
   Settings, 
   Bell, 
-  LogOut 
+  LogOut,
+  CalendarDays
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -73,6 +74,21 @@ export default function MobileNavigation() {
 
   return (
     <>
+      {/* Calendar floating button for logged-in users */}
+      {session?.user && (
+        <div className="md:hidden fixed bottom-20 right-4 z-50">
+          <Link href="/events/calendar">
+            <Button 
+              size="icon" 
+              className="h-14 w-14 rounded-full shadow-lg bg-primary hover:bg-primary/90 text-white"
+              aria-label="Calendar"
+            >
+              <CalendarDays className="h-6 w-6" />
+            </Button>
+          </Link>
+        </div>
+      )}
+
       {/* Bottom mobile navigation bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
         <div className="flex justify-around items-center h-16">
@@ -138,6 +154,23 @@ export default function MobileNavigation() {
                     </Link>
                   </SheetClose>
                 ))}
+                
+                {session?.user && (
+                  <SheetClose asChild>
+                    <Link 
+                      href="/events/calendar"
+                      className={cn(
+                        "flex items-center gap-3 px-2 py-2 text-sm rounded-md",
+                        pathname === "/events/calendar" 
+                          ? "bg-primary/10 text-primary font-medium" 
+                          : "text-gray-700 hover:bg-gray-100"
+                      )}
+                    >
+                      <CalendarDays className="h-5 w-5" />
+                      Kalender
+                    </Link>
+                  </SheetClose>
+                )}
               </div>
               
               <div className="space-y-1">

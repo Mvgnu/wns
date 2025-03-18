@@ -52,21 +52,31 @@ export default function EventTimeline({
   const fetchSingleEventResponse = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/events/participation?eventId=${eventId}`);
+      // Use a more reliable endpoint for single events
+      const response = await fetch(`/api/events/${eventId}/attend`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
       if (response.ok) {
         const data = await response.json();
+        // Set the instance with the current attendance status
         setInstances([
           {
             date: new Date(startTime),
-            response: data.userResponse?.response,
-            attendeeCount: data.counts?.yes || 0,
+            response: data.isAttending ? 'yes' : 'no',
+            attendeeCount: data.attendeeCount || 0,
           }
         ]);
       } else {
+        // If there's an error or the user is not logged in, just show the date
         setInstances([{ date: new Date(startTime) }]);
       }
     } catch (error) {
       console.error('Error fetching event response:', error);
+      // On error, just show the date
       setInstances([{ date: new Date(startTime) }]);
     } finally {
       setLoading(false);
@@ -235,6 +245,7 @@ export default function EventTimeline({
 
   const handleAttendanceChange = async (instanceDate: Date, response: 'yes' | 'no' | 'maybe') => {
     try {
+      // For all events, use the instance-specific API
       const payload = {
         eventId,
         response,
@@ -249,29 +260,45 @@ export default function EventTimeline({
         body: JSON.stringify(payload),
       });
       
+      // Better error handling
       if (!apiResponse.ok) {
-        throw new Error('Failed to update attendance');
+        const errorData = await apiResponse.json();
+        throw new Error(errorData.error || 'Teilnahmestatus konnte nicht aktualisiert werden');
       }
       
-      // Update local state
-      setInstances(prevInstances => 
-        prevInstances.map(instance => 
-          isSameDay(instance.date, instanceDate) 
-            ? { ...instance, response } 
-            : instance
-        )
-      );
+      // Get updated attendance counts after the update
+      const updatedCountsResponse = await fetch(`/api/events/participation/instance?eventId=${eventId}&date=${instanceDate.toISOString()}`);
       
+      if (!updatedCountsResponse.ok) {
+        console.error('Failed to fetch updated attendance counts');
+      } else {
+        const countsData = await updatedCountsResponse.json();
+        
+        // Update local state to reflect the attendance change and updated attendee count
+        setInstances(prevInstances => 
+          prevInstances.map(instance => 
+            isSameDay(instance.date, instanceDate) 
+              ? { 
+                  ...instance, 
+                  response,
+                  attendeeCount: countsData.counts?.yes || 0
+                } 
+              : instance
+          )
+        );
+      }
+      
+      // Show appropriate toast notification based on response
       toast({
         title: 'Teilnahme aktualisiert',
         description: `Du hast mit "${response === 'yes' ? 'Ja' : response === 'no' ? 'Nein' : 'Vielleicht'}" geantwortet`,
         variant: 'default',
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating attendance:', error);
       toast({
         title: 'Fehler',
-        description: 'Deine Teilnahme konnte nicht aktualisiert werden',
+        description: error.message || 'Deine Teilnahme konnte nicht aktualisiert werden',
         variant: 'destructive',
       });
     }

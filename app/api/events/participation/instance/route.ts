@@ -73,37 +73,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Create or update the participation response
-    // Use the dedicated ParticipationResponse with instanceDate
-    const response = await prisma.participationResponse.upsert({
-      where: {
-        eventId_userId_instanceDate: {
+    // Create or update the event instance response using the proper model
+    // Fix: Use EventInstanceResponse instead of ParticipationResponse
+    try {
+      const response = await prisma.eventInstanceResponse.upsert({
+        where: {
+          userId_eventId_date: {
+            eventId: validatedData.eventId,
+            userId: session.user.id,
+            date: instanceDate,
+          },
+        },
+        update: {
+          response: validatedData.response,
+        },
+        create: {
           eventId: validatedData.eventId,
           userId: session.user.id,
-          instanceDate: instanceDate,
+          response: validatedData.response,
+          date: instanceDate,
         },
-      },
-      update: {
-        response: validatedData.response,
-      },
-      create: {
-        eventId: validatedData.eventId,
-        userId: session.user.id,
-        response: validatedData.response,
-        instanceDate: instanceDate,
-      },
-    });
+      });
 
-    // IMPORTANT: We no longer modify the main event's attendees list
-    // This ensures subevent attendance is completely independent
+      // IMPORTANT: We no longer modify the main event's attendees list
+      // This ensures subevent attendance is completely independent
 
-    // Track instance-specific attendance counts (for analytics)
-    await updateInstanceAttendanceStats(validatedData.eventId, instanceDate);
+      // Track instance-specific attendance counts (for analytics)
+      await updateInstanceAttendanceStats(validatedData.eventId, instanceDate);
 
-    return NextResponse.json({
-      success: true,
-      data: response,
-    });
+      return NextResponse.json({
+        success: true,
+        data: response,
+      });
+    } catch (dbError: any) {
+      console.error("Database error:", dbError);
+      return NextResponse.json(
+        { 
+          error: "Failed to process participation response", 
+          details: dbError.message 
+        },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -124,10 +135,10 @@ export async function POST(req: NextRequest) {
 async function updateInstanceAttendanceStats(eventId: string, instanceDate: Date) {
   try {
     // Count how many users responded "yes" to this specific instance
-    const yesCount = await prisma.participationResponse.count({
+    const yesCount = await prisma.eventInstanceResponse.count({
       where: {
         eventId,
-        instanceDate: {
+        date: {
           gte: new Date(new Date(instanceDate).setHours(0, 0, 0, 0)),
           lt: new Date(new Date(instanceDate).setHours(23, 59, 59, 999)),
         },
@@ -211,10 +222,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Get all participation responses for the event instance
-    const responses = await prisma.participationResponse.findMany({
+    const responses = await prisma.eventInstanceResponse.findMany({
       where: { 
         eventId,
-        instanceDate: {
+        date: {
           gte: new Date(new Date(instanceDate).setHours(0, 0, 0, 0)),
           lt: new Date(new Date(instanceDate).setHours(23, 59, 59, 999)),
         },
@@ -234,11 +245,11 @@ export async function GET(req: NextRequest) {
     });
 
     // Get the user's own response
-    const userResponse = await prisma.participationResponse.findFirst({
+    const userResponse = await prisma.eventInstanceResponse.findFirst({
       where: {
         eventId,
         userId: session.user.id,
-        instanceDate: {
+        date: {
           gte: new Date(new Date(instanceDate).setHours(0, 0, 0, 0)),
           lt: new Date(new Date(instanceDate).setHours(23, 59, 59, 999)),
         },

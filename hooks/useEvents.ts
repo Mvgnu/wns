@@ -74,7 +74,31 @@ const createEvent = async (data: Omit<Event, "id" | "createdAt" | "updatedAt" | 
       throw new Error(errorMessage);
     }
     
-    return response.json();
+    const responseData = await response.json();
+    
+    // Handle redirect for recurring events
+    if (responseData.redirect && responseData.redirect === "/api/events/recurring/create" && responseData.data) {
+      // Call the recurring event creation endpoint with the redirected data
+      const recurringResponse = await fetch(responseData.redirect, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(responseData.data),
+      });
+      
+      if (!recurringResponse.ok) {
+        const errorText = await recurringResponse.text();
+        console.error("Recurring event creation failed with status:", recurringResponse.status);
+        console.error("Error response:", errorText);
+        throw new Error(errorText || "Failed to create recurring event");
+      }
+      
+      const recurringEventData = await recurringResponse.json();
+      return recurringEventData.event; // Return the newly created recurring event
+    }
+    
+    return responseData;
   } catch (error) {
     console.error("Event creation exception:", error);
     throw error;

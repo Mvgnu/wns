@@ -56,6 +56,8 @@ const formSchema = z.object({
   monthlyWeekdayOccurrence: z.enum(["1", "2", "3", "4"]).optional(),
   // For "byWeekday" option: which day of week
   monthlyWeekdayDay: z.enum(["0", "1", "2", "3", "4", "5", "6"]).optional(),
+  // Who can join the event
+  joinRestriction: z.enum(["everyone", "groupOnly"]).default("everyone"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -88,6 +90,7 @@ interface EventFormProps {
     recurringPattern?: string;
     recurringDays?: number[];
     recurringEndDate?: string;
+    joinRestriction?: "everyone" | "groupOnly";
   };
   isEditing?: boolean;
   groups?: Array<{
@@ -116,7 +119,7 @@ export default function EventForm({
   const router = useRouter();
   const createEvent = useCreateEvent();
   const updateEvent = useUpdateEvent();
-  const { data: fetchedLocations } = useLocations();
+  const { data: fetchedLocations } = useLocations(1, 100);
   const { data: fetchedGroups } = useGroups();
   const [images, setImages] = useState<string[]>(initialData?.image ? [initialData.image] : []);
   
@@ -147,7 +150,7 @@ export default function EventForm({
   
   // Use available groups
   const groups = propGroups || fetchedGroups || [];
-  const locations = propLocations || fetchedLocations || [];
+  const locations = propLocations || (fetchedLocations?.locations || []);
   
   // Initialize the form with react-hook-form
   const form = useForm<FormValues>({
@@ -164,6 +167,7 @@ export default function EventForm({
       recurringPattern: initialData?.recurringPattern as any || "weekly",
       recurringDays: initialRecurringDays,
       recurringEndDate: initialData?.recurringEndDate || "",
+      joinRestriction: initialData?.joinRestriction as "everyone" | "groupOnly" || "everyone",
     },
   });
   
@@ -697,7 +701,8 @@ export default function EventForm({
                                 minutes: startDate?.getMinutes() || 0 
                               }} 
                               onChange={(time: TimeValue) => {
-                                const newDate = startDate || new Date();
+                                // Create a completely new date object instead of modifying the existing one
+                                const newDate = new Date(startDate || new Date());
                                 newDate.setHours(time.hours || 0, time.minutes || 0);
                                 setStartDate(newDate);
                               }}
@@ -714,7 +719,8 @@ export default function EventForm({
                                 minutes: endDate?.getMinutes() || 0 
                               }} 
                               onChange={(time: TimeValue) => {
-                                const newDate = endDate || new Date();
+                                // Create a completely new date object instead of modifying the existing one
+                                const newDate = new Date(endDate || new Date());
                                 newDate.setHours(time.hours || 0, time.minutes || 0);
                                 setEndDate(newDate);
                               }}
@@ -795,6 +801,38 @@ export default function EventForm({
               </FormItem>
             )}
           />
+
+          {/* Who can join - only show if a group is selected */}
+          {form.watch("groupId") !== "none" && (
+            <FormField
+              control={form.control}
+              name="joinRestriction"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Wer kann teilnehmen?</FormLabel>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    disabled={form.formState.isSubmitting}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="everyone">Jeder kann teilnehmen</SelectItem>
+                      <SelectItem value="groupOnly">Nur Gruppenmitglieder</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    {field.value === "groupOnly" 
+                      ? "Nur Mitglieder der ausgewählten Gruppe können teilnehmen" 
+                      : "Jeder kann teilnehmen, auch wenn er kein Gruppenmitglied ist"}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}

@@ -18,7 +18,7 @@ const createEventSchema = z.object({
   isRecurring: z.literal(true), // Must be true for this endpoint
   recurringPattern: z.enum(["weekly", "monthly"]), 
   recurringDays: z.array(z.number()),
-  recurringEndDate: z.string().datetime("Invalid end date format").optional(),
+  recurringEndDate: z.string().datetime("Invalid end date format").nullable().optional(),
   
   // Optional advanced settings
   image: z.string().optional().nullable(),

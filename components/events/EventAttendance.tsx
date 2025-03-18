@@ -256,19 +256,77 @@ export default function EventAttendance({
     }
   };
   
+  // Instance-specific attendance functions
+  const handleInstanceAttendance = async (response: 'yes' | 'no' | 'maybe') => {
+    if (!userId || !instanceDate) return;
+    
+    setIsLoading(true);
+    
+    try {
+      const res = await fetch('/api/events/participation/instance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventId: event.id,
+          date: instanceDate.toISOString(),
+          response: response
+        }),
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to update attendance status');
+      }
+      
+      // Update local state
+      setInstanceAttendanceStatus(response);
+      
+      toast({
+        title: 'Teilnahmestatus aktualisiert',
+        description: response === 'yes' 
+          ? 'Du nimmst an dieser Veranstaltung teil' 
+          : response === 'no'
+            ? 'Du nimmst nicht an dieser Veranstaltung teil'
+            : 'Du nimmst vielleicht an dieser Veranstaltung teil',
+        variant: 'default',
+      });
+    } catch (error: any) {
+      console.error('Error updating attendance:', error);
+      toast({
+        title: 'Fehler',
+        description: error.message || 'Teilnahmestatus konnte nicht aktualisiert werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+  
   return (
     <div>
       {/* If it's a recurring event instance, show instance-specific attendance controls */}
       {instanceDate && event.isRecurring === true ? (
-        <div className="mb-3 flex flex-col">
-          <div className="text-sm text-muted-foreground mb-2">
-            Teilnahme am {instanceDate.toLocaleDateString()}:
+        <div className="mb-3 flex flex-col border border-muted p-4 rounded-md">
+          <div className="flex flex-col">
+            <h3 className="text-lg font-semibold">{event.title}</h3>
+            <div className="text-sm text-muted-foreground mb-4">
+              {instanceDate.toLocaleDateString()} {instanceDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+            </div>
+            {event.description && (
+              <p className="text-sm mb-4">{event.description}</p>
+            )}
+          </div>
+          
+          <div className="text-sm font-medium mb-2">
+            Deine Teilnahme:
           </div>
           <div className="flex space-x-2">
             <Button 
               size="sm" 
               variant={instanceAttendanceStatus === 'yes' ? 'default' : 'outline'}
-              onClick={handleAttend}
+              onClick={() => handleInstanceAttendance('yes')}
               disabled={isLoading}
             >
               <Check className="h-4 w-4 mr-1" />
@@ -277,7 +335,7 @@ export default function EventAttendance({
             <Button 
               size="sm" 
               variant={instanceAttendanceStatus === 'no' ? 'default' : 'outline'}
-              onClick={handleLeave}
+              onClick={() => handleInstanceAttendance('no')}
               disabled={isLoading}
             >
               <X className="h-4 w-4 mr-1" />
@@ -286,7 +344,7 @@ export default function EventAttendance({
             <Button 
               size="sm" 
               variant={instanceAttendanceStatus === 'maybe' ? 'default' : 'outline'}
-              onClick={handleMaybeAttend}
+              onClick={() => handleInstanceAttendance('maybe')}
               disabled={isLoading}
             >
               <HelpCircle className="h-4 w-4 mr-1" />
@@ -295,23 +353,43 @@ export default function EventAttendance({
           </div>
         </div>
       ) : (
-        <EventCard
-          id={event.id}
-          title={event.title}
-          description={event.description || undefined}
-          image={event.image || undefined}
-          startTime={typeof event.startTime === 'string' ? event.startTime : new Date(event.startTime).toISOString()}
-          endTime={event.endTime ? (typeof event.endTime === 'string' ? event.endTime : new Date(event.endTime).toISOString()) : undefined}
-          locationName={event.locationName || undefined}
-          locationId={event.locationId || undefined}
-          groupName={showGroupInfo ? groupName : undefined}
-          groupId={showGroupInfo ? groupId : undefined}
-          attendeeCount={attendeeCount}
-          isOrganizer={isOrganizer}
-          isAttending={isAttending}
-          onAttend={handleAttend}
-          onLeave={handleLeave}
-        />
+        <div className="border border-muted p-4 rounded-md">
+          <div className="flex flex-col mb-4">
+            <h3 className="text-lg font-semibold">{event.title}</h3>
+            <div className="text-sm text-muted-foreground mb-2">
+              {new Date(event.startTime).toLocaleDateString()} {new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+            </div>
+            {event.description && (
+              <p className="text-sm">{event.description}</p>
+            )}
+          </div>
+          
+          {userId && !isOrganizer && (
+            <div className="flex space-x-2 mt-4">
+              {!isAttending ? (
+                <Button 
+                  size="sm"
+                  variant="default"
+                  onClick={handleAttend}
+                  disabled={isLoading}
+                >
+                  <Check className="h-4 w-4 mr-1" />
+                  Teilnehmen
+                </Button>
+              ) : (
+                <Button 
+                  size="sm"
+                  variant="outline"
+                  onClick={handleLeave}
+                  disabled={isLoading}
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Nicht teilnehmen
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

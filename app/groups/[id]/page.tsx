@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import EventCard from '@/components/events/EventCard';
 import JoinGroupButton from '@/components/groups/JoinGroupButton';
+import LeaveGroupButton from '@/components/groups/LeaveGroupButton';
 import EventList from '@/components/events/EventList';
 import GroupMembersList from '@/components/groups/GroupMembersList';
 import GroupPostsList from '@/components/groups/GroupPostsList';
@@ -193,6 +194,7 @@ export default async function GroupPage({ params }: { params: { id: string } }) 
               {userId && (
                 <div className="flex gap-2">
                   {!isMember && <JoinGroupButton groupId={group.id} isPrivate={group.isPrivate} isMember={isMember} />}
+                  {isMember && !isOwner && <LeaveGroupButton groupId={group.id} isMember={isMember} />}
                   {isOwner && <GroupClientWrapper type="actions" groupId={group.id} isOwner={isOwner} />}
                 </div>
               )}

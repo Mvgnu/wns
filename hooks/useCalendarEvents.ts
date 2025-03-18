@@ -30,8 +30,27 @@ interface Event {
 }
 
 // Fetch calendar events for the logged-in user
-const fetchCalendarEvents = async (days: number = 30): Promise<Event[]> => {
-  const response = await fetch(`/api/events/calendar?days=${days}`);
+// Updated to accept start and end dates instead of just days
+const fetchCalendarEvents = async (options: { 
+  days?: number;
+  startDate?: Date; 
+  endDate?: Date;
+}): Promise<Event[]> => {
+  const params = new URLSearchParams();
+  
+  if (options.days) {
+    params.append("days", options.days.toString());
+  }
+  
+  if (options.startDate) {
+    params.append("startDate", options.startDate.toISOString());
+  }
+  
+  if (options.endDate) {
+    params.append("endDate", options.endDate.toISOString());
+  }
+  
+  const response = await fetch(`/api/events/calendar?${params.toString()}`);
   
   if (!response.ok) {
     throw new Error("Failed to fetch calendar events");
@@ -41,10 +60,15 @@ const fetchCalendarEvents = async (days: number = 30): Promise<Event[]> => {
 };
 
 // Hook to fetch calendar events
-export function useCalendarEvents(days: number = 30) {
+// Updated to accept more flexible parameters
+export function useCalendarEvents(options: {
+  days?: number;
+  startDate?: Date;
+  endDate?: Date;
+} = { days: 30 }) {
   return useQuery({
-    queryKey: ["calendarEvents", days],
-    queryFn: () => fetchCalendarEvents(days),
+    queryKey: ["calendarEvents", options],
+    queryFn: () => fetchCalendarEvents(options),
   });
 }
 

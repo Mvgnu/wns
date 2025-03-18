@@ -267,6 +267,9 @@ model Event {
   recurringEndDate  DateTime?
   parentEventId     String?  // For recurring event instances, refers to the template event
   
+  // Access control - who can join this event
+  joinRestriction   String   @default("everyone") // "everyone" or "groupOnly"
+  
   // Relationships
   organizer         User     @relation("EventOrganizer", fields: [organizerId], references: [id])
   organizerId       String

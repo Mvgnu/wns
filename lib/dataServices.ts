@@ -3,6 +3,29 @@
 
 import { prisma } from './prisma';
 import { getSportsByCategory } from './sportsData';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { Prisma } from '@prisma/client';
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * Get the path to a sport image or default if not found
+ */
+function getSportImagePath(sportValue: string): string {
+  const normalizedSport = sportValue.toLowerCase().replace(/\s+/g, '-');
+  const fileName = `sport-${normalizedSport}.jpg`;
+  const imagePath = `/images/sports/${fileName}`;
+  
+  // Check if the file exists on the filesystem
+  const fullPath = path.join(process.cwd(), 'public', imagePath);
+  if (fs.existsSync(fullPath)) {
+    return imagePath;
+  }
+  
+  // Return default image if sport image doesn't exist
+  return '/images/default-sport.jpg';
+}
 
 /**
  * Data fetching service for the homepage
@@ -10,100 +33,170 @@ import { getSportsByCategory } from './sportsData';
  */
 export async function getHomePageData() {
   try {
+    // Get current user session for conditional privacy filtering
+    const session = await getServerSession(authOptions);
+    const userId = session?.user?.id;
+    
     // Get all sports organized by category
     const sportsByCategory = getSportsByCategory();
     
-    // Fetch important stats
-    const groupsCount = await prisma.group.count();
-    const locationsCount = await prisma.location.count();
-    const usersCount = await prisma.user.count();
+    // Fetch important stats - only count public entities for non-logged in users
+    const statsPromises = [
+      // For groups, only count public ones for non-logged in users
+      prisma.group.count({
+        where: userId ? undefined : { isPrivate: false }
+      }),
+      
+      // For locations, all are public
+      prisma.location.count(),
+      
+      // For users, all user counts are public
+      prisma.user.count()
+    ];
+    
+    const [groupsCount, locationsCount, usersCount] = await Promise.all(statsPromises);
     
     // Get most popular groups for each sport category
     const categoryHighlights: Record<string, any> = {};
     
-    // Get popular groups and events for each category
-    for (const category of Object.keys(sportsByCategory)) {
-      // Instead of getting highlights for all sports in a category,
-      // we'll get highlights for the category as a whole
-      
-      // Get most popular group for this category (most members)
-      const topGroup = await prisma.group.findFirst({
-        where: {
-          // Use the first sport in the category as a representative
-          // This avoids showing the same group for multiple sports
-          sport: sportsByCategory[category][0].value
-        },
-        orderBy: {
-          members: {
-            _count: 'desc'
-          }
-        },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          image: true,
-          sport: true,
-          location: true,
-          isPrivate: true,
-          createdAt: true,
-          updatedAt: true,
-          ownerId: true,
-          _count: {
-            select: { members: true }
-          }
-        },
-        take: 1
-      });
-      
-      // Get upcoming event for this category
-      const upcomingEvent = await prisma.event.findFirst({
-        where: {
-          group: {
-            // Use the first sport in the category as a representative
-            sport: sportsByCategory[category][0].value
-          },
-          startTime: {
-            gte: new Date()
-          }
-        },
-        orderBy: {
-          startTime: 'asc'
-        },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          startTime: true,
-          endTime: true,
-          image: true,
-          location: true,
-          createdAt: true,
-          updatedAt: true,
-          group: {
-            select: {
-              id: true,
-              name: true,
-              image: true,
-              sport: true
+    // Prepare all category highlights in parallel
+    await Promise.all(
+      Object.keys(sportsByCategory).map(async (category) => {
+        // Get highlights for each sport in the category in parallel
+        const sportHighlights = await Promise.all(
+          sportsByCategory[category].map(async (sport) => {
+            try {
+              // Build appropriate privacy filter based on user login status
+              let groupWhereInput: Prisma.GroupWhereInput;
+              
+              if (userId) {
+                // If user is logged in, they can see:
+                // 1. Public groups for this sport
+                // 2. Private groups they are a member of
+                // 3. Private groups they own
+                groupWhereInput = {
+                  sport: sport.value,
+                  OR: [
+                    { isPrivate: false },
+                    {
+                      isPrivate: true,
+                      members: { some: { id: userId } }
+                    },
+                    {
+                      isPrivate: true,
+                      ownerId: userId
+                    }
+                  ]
+                };
+              } else {
+                // For non-logged in users, only show public groups
+                groupWhereInput = {
+                  sport: sport.value,
+                  isPrivate: false
+                };
+              }
+              
+              // Get most popular group for this specific sport
+              const topGroup = await prisma.group.findFirst({
+                where: groupWhereInput,
+                orderBy: {
+                  members: {
+                    _count: 'desc'
+                  }
+                },
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  image: true,
+                  sport: true,
+                  location: true,
+                  isPrivate: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  ownerId: true,
+                  _count: {
+                    select: { members: true }
+                  }
+                },
+                take: 1
+              });
+              
+              // Get upcoming event for this specific sport
+              const upcomingEvent = await prisma.event.findFirst({
+                where: {
+                  group: groupWhereInput,
+                  startTime: {
+                    gte: new Date()
+                  }
+                },
+                orderBy: {
+                  startTime: 'asc'
+                },
+                select: {
+                  id: true,
+                  title: true,
+                  description: true,
+                  startTime: true,
+                  endTime: true,
+                  image: true,
+                  location: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  group: {
+                    select: {
+                      id: true,
+                      name: true,
+                      image: true,
+                      sport: true,
+                      isPrivate: true
+                    }
+                  }
+                },
+                take: 1
+              });
+              
+              return {
+                sport: sport.value,
+                label: sport.label,
+                description: sport.description,
+                topGroup,
+                upcomingEvent
+              };
+            } catch (error) {
+              console.error(`Error fetching highlights for sport ${sport.value}:`, error);
+              // Return empty highlight on error to ensure we don't break the entire page
+              return {
+                sport: sport.value,
+                label: sport.label,
+                description: sport.description,
+                topGroup: null,
+                upcomingEvent: null
+              };
             }
-          }
-        },
-        take: 1
-      });
-      
-      categoryHighlights[category] = {
-        topGroup,
-        upcomingEvent
-      };
-    }
+          })
+        );
+        
+        // Filter out sports with no highlights to optimize the payload
+        categoryHighlights[category] = sportHighlights.filter(
+          highlight => highlight.topGroup !== null || highlight.upcomingEvent !== null
+        );
+      })
+    );
+    
+    // Get all sport image paths from the local filesystem
+    const sportImages: Record<string, string> = {};
+    Object.values(sportsByCategory).flat().forEach(sport => {
+      sportImages[sport.value] = getSportImagePath(sport.value);
+    });
     
     return {
       sportsByCategory,
       groupsCount,
       locationsCount,
       usersCount,
-      categoryHighlights
+      categoryHighlights,
+      sportImages
     };
   } catch (error) {
     console.error('Error in getHomePageData:', error);
@@ -113,7 +206,8 @@ export async function getHomePageData() {
       groupsCount: 0,
       locationsCount: 0,
       usersCount: 0,
-      categoryHighlights: {}
+      categoryHighlights: {},
+      sportImages: {}
     };
   }
 } 

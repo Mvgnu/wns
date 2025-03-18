@@ -1,20 +1,35 @@
 'use client';
 
 import * as React from "react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { HierarchicalFilter, HierarchicalOption } from "@/components/ui/hierarchical-filter";
 import SearchResults from "./SearchResults";
-import { Search as SearchIcon, Filter, X, Loader2 } from "lucide-react";
-import { allSports, getSportsByCategory, sportsCategories, Sport } from "@/lib/sportsData";
+import { Search as SearchIcon, Filter, X, Loader2, Calendar, MapPin, Users, Tag } from "lucide-react";
+import { allSports, getSportsByCategory, sportsCategories } from "@/lib/sportsData";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { debounce } from "lodash";
+import { format } from "date-fns";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/use-toast";
+
+interface SearchParams {
+  query: string;
+  type: string;
+  sports: string[];
+  date?: Date;
+  location?: string;
+  isRecurring?: boolean;
+  isPrivate?: boolean;
+}
 
 interface SearchPageClientProps {
   initialQuery: string;
@@ -29,20 +44,23 @@ export default function SearchPageClient({
 }: SearchPageClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { toast } = useToast();
   
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedType, setSelectedType] = useState<string>(initialType || "all");
   const [selectedSports, setSelectedSports] = useState<string[]>(initialSports);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [selectedLocation, setSelectedLocation] = useState<string>("");
+  const [isRecurring, setIsRecurring] = useState<boolean | undefined>(undefined);
+  const [isPrivateGroup, setIsPrivateGroup] = useState<boolean | undefined>(undefined);
   const [searchResults, setSearchResults] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Convert sports data to hierarchical options
-  const sportsOptions: HierarchicalOption[] = React.useMemo(() => {
-    // Create map of categories to sports
+  const sportsOptions: HierarchicalOption[] = useMemo(() => {
     const sportsByCategory = getSportsByCategory();
-    
-    // Convert to hierarchical options format
     return sportsCategories.map(category => ({
       id: category,
       label: category,
@@ -56,98 +74,180 @@ export default function SearchPageClient({
     }));
   }, []);
 
-  // Define a debounced search function
-  const debouncedFetch = useCallback(
-    debounce((query: string, type: string, sports: string[]) => {
-      if (!query) {
-        setSearchResults(null);
-        setIsLoading(false);
-        return;
-      }
-      
-      const fetchResults = async () => {
-        try {
-          // Build the API URL with all parameters
-          let url = `/api/search?q=${encodeURIComponent(query)}`;
-          
-          // Add type filter if not "all"
-          if (type && type !== "all") {
-            url += `&type=${encodeURIComponent(type)}`;
-          }
-          
-          // Add sports filter if present
-          if (sports && sports.length > 0) {
-            url += `&sports=${encodeURIComponent(sports.join(','))}`;
-          }
-          
-          const response = await fetch(url);
-          
-          if (!response.ok) {
-            throw new Error(`Search failed: ${response.status}`);
-          }
-          
-          const data = await response.json();
-          setSearchResults(data);
-        } catch (error) {
-          console.error("Search error:", error);
-          // Handle error state here
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      
-      fetchResults();
-    }, 300),
-    []
-  );
-
-  // Handle live search as user types
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      setIsLoading(true);
-      debouncedFetch(searchQuery, selectedType, selectedSports);
-      
-      // Update URL with current search parameters (without navigating)
-      const newUrl = buildSearchUrl(searchQuery, selectedType, selectedSports);
-      window.history.replaceState({}, '', newUrl);
-    } else {
-      setSearchResults(null);
-      setIsLoading(false);
-    }
-  }, [searchQuery, selectedType, selectedSports, debouncedFetch]);
-
-  // Fetch search results for the initial query
-  useEffect(() => {
-    if (initialQuery) {
-      setIsLoading(true);
-      debouncedFetch(initialQuery, initialType, initialSports);
-    }
-  }, [initialQuery, initialType, initialSports, debouncedFetch]);
-
-  // Build search URL
-  const buildSearchUrl = (query: string, type: string, sports: string[]) => {
+  // Create a search params object for consistent handling
+  const currentSearchParams = useMemo<SearchParams>(() => ({
+    query: searchQuery,
+    type: selectedType,
+    sports: selectedSports,
+    date: selectedDate,
+    location: selectedLocation,
+    isRecurring,
+    isPrivate: isPrivateGroup
+  }), [
+    searchQuery, 
+    selectedType, 
+    selectedSports, 
+    selectedDate, 
+    selectedLocation, 
+    isRecurring, 
+    isPrivateGroup
+  ]);
+  
+  // Generate query string from search params
+  const buildSearchUrl = useCallback((params: SearchParams): string => {
+    const { query, type, sports, date, location, isRecurring, isPrivate } = params;
     let searchUrl = `/search?q=${encodeURIComponent(query)}`;
     
-    // Add type if not "all"
     if (type !== "all") {
       searchUrl += `&type=${encodeURIComponent(type)}`;
     }
     
-    // Add sports if selected
     if (sports.length > 0) {
       searchUrl += `&sports=${encodeURIComponent(sports.join(','))}`;
     }
+
+    if (date) {
+      searchUrl += `&date=${format(date, 'yyyy-MM-dd')}`;
+    }
+
+    if (location) {
+      searchUrl += `&location=${encodeURIComponent(location)}`;
+    }
+
+    if (isRecurring !== undefined) {
+      searchUrl += `&isRecurring=${isRecurring}`;
+    }
+
+    if (isPrivate !== undefined) {
+      searchUrl += `&isPrivate=${isPrivate}`;
+    }
     
     return searchUrl;
-  };
+  }, []);
+
+  // Generate API URL from search params
+  const buildApiUrl = useCallback((params: SearchParams): string => {
+    const { query, type, sports, date, location, isRecurring, isPrivate } = params;
+    let apiUrl = `/api/search?q=${encodeURIComponent(query)}`;
+    
+    if (type !== "all") {
+      apiUrl += `&type=${encodeURIComponent(type)}`;
+    }
+    
+    if (sports.length > 0) {
+      apiUrl += `&sports=${encodeURIComponent(sports.join(','))}`;
+    }
+
+    if (date) {
+      apiUrl += `&date=${format(date, 'yyyy-MM-dd')}`;
+    }
+
+    if (location) {
+      apiUrl += `&location=${encodeURIComponent(location)}`;
+    }
+
+    if (isRecurring !== undefined) {
+      apiUrl += `&isRecurring=${isRecurring}`;
+    }
+
+    if (isPrivate !== undefined) {
+      apiUrl += `&isPrivate=${isPrivate}`;
+    }
+    
+    return apiUrl;
+  }, []);
+
+  // Fetch search results function
+  const fetchSearchResults = useCallback(async (params: SearchParams) => {
+    if (!params.query.trim()) {
+      setSearchResults(null);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setError(null);
+      setIsLoading(true);
+      
+      const apiUrl = buildApiUrl(params);
+      const response = await fetch(apiUrl);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `Search failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (error) {
+      console.error("Search error:", error);
+      setError(error instanceof Error ? error.message : "An error occurred while searching");
+      toast({
+        title: "Search failed",
+        description: error instanceof Error ? error.message : "An error occurred while searching",
+        variant: "destructive"
+      });
+      setSearchResults(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [buildApiUrl, toast]);
+
+  // Debounced fetch
+  const debouncedFetch = useMemo(() => 
+    debounce((params: SearchParams) => {
+      fetchSearchResults(params);
+      
+      // Update URL without navigation
+      const newUrl = buildSearchUrl(params);
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, '', newUrl);
+      }
+    }, 300),
+    [fetchSearchResults, buildSearchUrl]
+  );
+
+  // Effect for handling search parameter changes
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      debouncedFetch(currentSearchParams);
+    } else {
+      setSearchResults(null);
+      setIsLoading(false);
+    }
+  }, [currentSearchParams, debouncedFetch, searchQuery]);
+
+  // Initial fetch on mount
+  useEffect(() => {
+    if (initialQuery) {
+      setIsLoading(true);
+      fetchSearchResults({
+        query: initialQuery,
+        type: initialType,
+        sports: initialSports,
+        date: selectedDate,
+        location: selectedLocation,
+        isRecurring,
+        isPrivate: isPrivateGroup
+      });
+    }
+  }, [
+    initialQuery, 
+    initialType, 
+    initialSports, 
+    selectedDate, 
+    selectedLocation, 
+    isRecurring, 
+    isPrivateGroup, 
+    fetchSearchResults
+  ]);
 
   // Handle search form submission
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     
     // Build the URL with the current search parameters
-    let searchUrl = buildSearchUrl(searchQuery, selectedType, selectedSports);
-    
+    const searchUrl = buildSearchUrl(currentSearchParams);
     router.push(searchUrl);
   };
 
@@ -165,18 +265,38 @@ export default function SearchPageClient({
   const clearFilters = () => {
     setSelectedType("all");
     setSelectedSports([]);
+    setSelectedDate(undefined);
+    setSelectedLocation("");
+    setIsRecurring(undefined);
+    setIsPrivateGroup(undefined);
   };
 
   // Get selected sports labels for display
-  const selectedSportsLabels = selectedSports.map(sportValue => {
-    const sport = allSports.find(s => s.value === sportValue);
-    return sport ? sport.label : sportValue;
-  });
+  const selectedSportsLabels = useMemo(() => 
+    selectedSports.map(sportValue => {
+      const sport = allSports.find(s => s.value === sportValue);
+      return sport ? sport.label : sportValue;
+    }), 
+    [selectedSports]
+  );
 
   // Count active filters
-  const activeFiltersCount = 
+  const activeFiltersCount = useMemo(() => 
     (selectedType !== "all" ? 1 : 0) + 
-    selectedSports.length;
+    selectedSports.length +
+    (selectedDate ? 1 : 0) +
+    (selectedLocation ? 1 : 0) +
+    (isRecurring !== undefined ? 1 : 0) +
+    (isPrivateGroup !== undefined ? 1 : 0),
+    [
+      selectedType, 
+      selectedSports, 
+      selectedDate, 
+      selectedLocation, 
+      isRecurring, 
+      isPrivateGroup
+    ]
+  );
 
   return (
     <div className="container py-8 px-4 md:px-8">
@@ -242,241 +362,187 @@ export default function SearchPageClient({
                           selected={selectedSports}
                           onChange={handleSportsChange}
                           placeholder="Sportarten auswählen"
-                          maxHeight="400px"
                         />
                       </AccordionContent>
                     </AccordionItem>
                     <AccordionItem value="type">
                       <AccordionTrigger>Typ</AccordionTrigger>
                       <AccordionContent>
-                        <div className="flex flex-wrap gap-2">
-                          {["all", "groups", "events", "locations", "users"].map((type) => (
-                            <Button
-                              key={type}
-                              variant={selectedType === type ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => handleTypeChange(type)}
-                            >
-                              {type === "all" ? "Alle" : 
-                               type === "groups" ? "Gruppen" : 
-                               type === "events" ? "Events" : 
-                               type === "locations" ? "Orte" : "Nutzer"}
-                            </Button>
-                          ))}
-                        </div>
+                        <Tabs value={selectedType} onValueChange={handleTypeChange} className="w-full">
+                          <TabsList className="w-full">
+                            <TabsTrigger value="all" className="flex-1">Alle</TabsTrigger>
+                            <TabsTrigger value="events" className="flex-1">Events</TabsTrigger>
+                            <TabsTrigger value="groups" className="flex-1">Gruppen</TabsTrigger>
+                            <TabsTrigger value="locations" className="flex-1">Orte</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
                       </AccordionContent>
                     </AccordionItem>
+                    {(selectedType === "events" || selectedType === "all") && (
+                      <AccordionItem value="events">
+                        <AccordionTrigger>Event Filter</AccordionTrigger>
+                        <AccordionContent className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Datum</label>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full justify-start text-left font-normal",
+                                    !selectedDate && "text-muted-foreground"
+                                  )}
+                                >
+                                  <Calendar className="mr-2 h-4 w-4" />
+                                  {selectedDate ? format(selectedDate, "PPP") : "Datum auswählen"}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <CalendarComponent
+                                  mode="single"
+                                  selected={selectedDate}
+                                  onSelect={setSelectedDate}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Ort</label>
+                            <Input
+                              placeholder="Nach Ort suchen..."
+                              value={selectedLocation}
+                              onChange={(e) => setSelectedLocation(e.target.value)}
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Wiederkehrend</label>
+                            <div className="flex gap-2">
+                              <Button
+                                variant={isRecurring === true ? "default" : "outline"}
+                                onClick={() => setIsRecurring(true)}
+                                className="flex-1"
+                              >
+                                Ja
+                              </Button>
+                              <Button
+                                variant={isRecurring === false ? "default" : "outline"}
+                                onClick={() => setIsRecurring(false)}
+                                className="flex-1"
+                              >
+                                Nein
+                              </Button>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
+                    {(selectedType === "groups" || selectedType === "all") && (
+                      <AccordionItem value="groups">
+                        <AccordionTrigger>Gruppen Filter</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Privat</label>
+                            <div className="flex gap-2">
+                              <Button
+                                variant={isPrivateGroup === true ? "default" : "outline"}
+                                onClick={() => setIsPrivateGroup(true)}
+                                className="flex-1"
+                              >
+                                Ja
+                              </Button>
+                              <Button
+                                variant={isPrivateGroup === false ? "default" : "outline"}
+                                onClick={() => setIsPrivateGroup(false)}
+                                className="flex-1"
+                              >
+                                Nein
+                              </Button>
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
                   </Accordion>
-                  
-                  <div className="mt-6 flex justify-between">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => {
-                        clearFilters();
-                        setIsMobileFilterOpen(false);
-                      }}
-                    >
-                      Zurücksetzen
-                    </Button>
-                    <Button onClick={() => setIsMobileFilterOpen(false)}>
-                      Anwenden
-                    </Button>
-                  </div>
                 </div>
               </SheetContent>
             </Sheet>
-            
-            {/* Display active filters on mobile */}
-            {activeFiltersCount > 0 && (
-              <div className="flex items-center gap-2 overflow-x-auto py-2">
-                {selectedType !== "all" && (
-                  <Badge variant="secondary" className="whitespace-nowrap">
-                    {selectedType === "groups" ? "Gruppen" : 
-                     selectedType === "events" ? "Events" : 
-                     selectedType === "locations" ? "Orte" : "Nutzer"}
-                    <button 
-                      className="ml-1 hover:text-gray-700" 
-                      onClick={() => setSelectedType("all")}
-                    >
-                      <X size={14} />
-                    </button>
-                  </Badge>
-                )}
-                
-                {selectedSportsLabels.slice(0, 2).map((sport) => (
-                  <Badge key={sport} variant="secondary" className="whitespace-nowrap">
-                    {sport}
-                    <button 
-                      className="ml-1 hover:text-gray-700" 
-                      onClick={() => {
-                        setSelectedSports(
-                          selectedSports.filter(s => 
-                            allSports.find(as => as.value === s)?.label !== sport
-                          )
-                        );
-                      }}
-                    >
-                      <X size={14} />
-                    </button>
-                  </Badge>
-                ))}
-                
-                {selectedSports.length > 2 && (
-                  <Badge variant="secondary">
-                    +{selectedSports.length - 2} weitere
-                  </Badge>
-                )}
-              </div>
-            )}
           </div>
         </div>
-        
-        {/* Main content area with filters and results */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          {/* Desktop Filters Sidebar */}
-          <div className="hidden md:block md:col-span-1 space-y-6">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Filter</h2>
-                {activeFiltersCount > 0 && (
-                  <Button variant="ghost" size="sm" onClick={clearFilters}>
-                    Zurücksetzen
-                  </Button>
-                )}
-              </div>
-              
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-sm font-medium mb-3">Typ</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { value: "all", label: "Alle" },
-                      { value: "groups", label: "Gruppen" },
-                      { value: "events", label: "Events" },
-                      { value: "locations", label: "Orte" },
-                      { value: "users", label: "Nutzer" }
-                    ].map((type) => (
-                      <Button
-                        key={type.value}
-                        variant={selectedType === type.value ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => handleTypeChange(type.value)}
-                      >
-                        {type.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                
-                <div>
-                  <h3 className="text-sm font-medium mb-3">Sportarten</h3>
-                  <HierarchicalFilter
-                    options={sportsOptions}
-                    selected={selectedSports}
-                    onChange={handleSportsChange}
-                    placeholder="Sportarten auswählen"
-                    maxHeight="400px"
-                  />
-                </div>
-              </div>
-            </div>
-            
-            {selectedSports.length > 0 && (
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                <h3 className="text-sm font-medium mb-2">Ausgewählte Sportarten</h3>
-                <div className="flex flex-wrap gap-2">
-                  {selectedSportsLabels.map((sport) => (
-                    <Badge key={sport} variant="secondary" className="whitespace-nowrap">
-                      {sport}
-                      <button 
-                        className="ml-1 hover:text-gray-700" 
-                        onClick={() => {
-                          setSelectedSports(
-                            selectedSports.filter(s => 
-                              allSports.find(as => as.value === s)?.label !== sport
-                            )
-                          );
-                        }}
-                      >
-                        <X size={14} />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              </div>
+
+        {/* Active filters */}
+        {(activeFiltersCount > 0 || error) && (
+          <div className="flex flex-wrap gap-2 items-center">
+            {error && (
+              <Badge variant="destructive" className="flex items-center gap-1">
+                <X className="h-3 w-3" />
+                {error}
+              </Badge>
             )}
+            {selectedType !== "all" && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Filter className="h-3 w-3" />
+                {selectedType}
+              </Badge>
+            )}
+            {selectedSports.map((sport) => (
+              <Badge key={sport} variant="secondary" className="flex items-center gap-1">
+                <Tag className="h-3 w-3" />
+                {sport}
+              </Badge>
+            ))}
+            {selectedDate && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                {format(selectedDate, "PPP")}
+              </Badge>
+            )}
+            {selectedLocation && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <MapPin className="h-3 w-3" />
+                {selectedLocation}
+              </Badge>
+            )}
+            {isRecurring !== undefined && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                {isRecurring ? "Wiederkehrend" : "Einmalig"}
+              </Badge>
+            )}
+            {isPrivateGroup !== undefined && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Users className="h-3 w-3" />
+                {isPrivateGroup ? "Privat" : "Öffentlich"}
+              </Badge>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="h-6 px-2"
+            >
+              <X className="h-3 w-3 mr-1" />
+              Filter zurücksetzen
+            </Button>
           </div>
-          
-          {/* Results area */}
-          <div className="md:col-span-3">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-              {/* Type tabs for desktop */}
-              <div className="hidden md:block mb-6">
-                <Tabs 
-                  value={selectedType} 
-                  onValueChange={handleTypeChange}
-                  className="w-full"
-                >
-                  <TabsList className="w-full justify-start">
-                    <TabsTrigger value="all">Alle</TabsTrigger>
-                    <TabsTrigger value="groups">Gruppen</TabsTrigger>
-                    <TabsTrigger value="events">Events</TabsTrigger>
-                    <TabsTrigger value="locations">Orte</TabsTrigger>
-                    <TabsTrigger value="users">Nutzer</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-              
-              {/* Results count */}
-              {searchQuery && (
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold">
-                    {isLoading ? (
-                      <Skeleton className="h-7 w-48" />
-                    ) : searchResults ? (
-                      `Ergebnisse für "${searchQuery}"`
-                    ) : (
-                      `Keine Ergebnisse für "${searchQuery}"`
-                    )}
-                  </h2>
-                </div>
-              )}
-              
-              {/* Search results or placeholder */}
-              {isLoading ? (
-                <div className="space-y-6">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex flex-col gap-2">
-                      <Skeleton className="h-6 w-32" />
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[1, 2, 3].map((j) => (
-                          <Skeleton key={j} className="h-64 w-full rounded-md" />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : searchQuery ? (
-                searchResults ? (
-                  <SearchResults results={searchResults} type={selectedType} />
-                ) : (
-                  <div className="py-8 text-center">
-                    <p className="text-gray-500 mb-4">Keine Ergebnisse gefunden</p>
-                    <p className="text-sm text-gray-400">Versuche es mit einem anderen Suchbegriff oder anderen Filtern</p>
-                  </div>
-                )
-              ) : (
-                <div className="py-16 text-center">
-                  <SearchIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-xl font-medium text-gray-700 mb-2">Suche starten</h3>
-                  <p className="text-gray-500 max-w-md mx-auto">
-                    Gib einen Suchbegriff ein, um nach Gruppen, Events, Orten oder Nutzern zu suchen
-                  </p>
-                </div>
-              )}
-            </div>
+        )}
+
+        {/* Search results */}
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-32 w-full" />
           </div>
-        </div>
+        ) : (
+          <SearchResults 
+            results={searchResults} 
+            type={selectedType}
+            query={searchQuery}
+          />
+        )}
       </div>
     </div>
   );
