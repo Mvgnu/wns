@@ -1,122 +1,87 @@
-import { Metadata, ResolvingMetadata } from 'next';
+import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import LocationPageClient from '@/app/locations/[id]/LocationPageClient';
+import LocationDetailClient from './components/LocationDetailClient';
+import { allSports } from '@/lib/sportsData';
 
-type Props = {
+interface LocationPageProps {
   params: {
     id: string;
   };
-};
+}
 
 // Generate metadata for SEO
-export async function generateMetadata(
-  { params }: Props,
-  parent: ResolvingMetadata
-): Promise<Metadata> {
-  const locationId = params.id;
-
+export async function generateMetadata({ params }: LocationPageProps): Promise<Metadata> {
   const location = await prisma.location.findUnique({
-    where: { id: locationId },
-    select: { 
-      name: true,
-      description: true,
-      type: true,
-      sport: true,
-      images: true,
-      addedBy: {
-        select: {
-          name: true
-        }
-      }
-    }
+    where: { id: params.id },
+    select: { name: true, sport: true, type: true }
   });
 
   if (!location) {
     return {
-      title: 'Ort nicht gefunden',
-      description: 'Der gesuchte Ort existiert nicht',
+      title: 'Location nicht gefunden',
+      description: 'Die angeforderte Location existiert nicht.',
     };
   }
 
+  // Find the sport label from the sport code
+  const sportObj = allSports.find(s => s.value === location.sport);
+  const sportLabel = sportObj?.label || location.sport;
+
   return {
-    title: location.name,
-    description: location.description || `Ein ${location.type} für ${location.sport}`,
+    title: `${location.name} - Sport Location | WNS Community`,
+    description: `Entdecke ${location.name}, eine ${location.type} für ${sportLabel}. Bewertungen, Details und Events an dieser Location.`,
     openGraph: {
-      type: 'website',
-      title: location.name,
-      description: location.description || `Ein ${location.type} für ${location.sport}`,
-      images: [
-        {
-          url: location.images?.[0] || '/images/default-location.jpg',
-          width: 1200,
-          height: 630,
-          alt: location.name,
-        },
-      ],
+      title: `${location.name} - Sport Location | WNS Community`,
+      description: `Entdecke ${location.name}, eine ${location.type} für ${sportLabel}. Bewertungen, Details und Events an dieser Location.`,
     },
   };
 }
 
-export default async function LocationPage({ params }: Props) {
-  const locationId = params.id;
-
+export default async function LocationPage({ params }: LocationPageProps) {
   const location = await prisma.location.findUnique({
-    where: { id: locationId },
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      type: true,
-      sport: true,
-      latitude: true,
-      longitude: true,
-      address: true,
-      images: true,
-      rating: true,
-      createdAt: true,
-      updatedAt: true,
+    where: { id: params.id },
+    include: {
       addedBy: {
         select: {
           id: true,
           name: true,
-          image: true
-        }
+          image: true,
+        },
       },
       reviews: {
-        select: {
-          id: true,
-          rating: true,
-          comment: true,
-          createdAt: true,
+        include: {
           user: {
             select: {
               id: true,
               name: true,
-              image: true
-            }
-          }
+              image: true,
+            },
+          },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: {
+          createdAt: 'desc',
+        },
       },
       events: {
-        select: {
-          id: true,
-          title: true,
-          startTime: true,
-          endTime: true,
-          image: true,
+        where: {
+          startTime: {
+            gte: new Date(),
+          },
+        },
+        orderBy: {
+          startTime: 'asc',
+        },
+        include: {
           organizer: {
             select: {
               id: true,
               name: true,
-              image: true
-            }
-          }
+              image: true,
+            },
+          },
         },
-        where: { startTime: { gte: new Date() } },
-        orderBy: { startTime: 'asc' },
-        take: 3,
+        take: 5,
       },
     },
   });
@@ -125,13 +90,21 @@ export default async function LocationPage({ params }: Props) {
     notFound();
   }
 
+  // Calculate average rating
   const averageRating =
     location.reviews.length > 0
-      ? location.reviews.reduce((sum, review) => sum + review.rating, 0) /
-        location.reviews.length
-      : location.rating || 0;
+      ? location.reviews.reduce((acc, review) => acc + review.rating, 0) / location.reviews.length
+      : 0;
+
+  // Find the sport label from the sport code
+  const sportObj = allSports.find(s => s.value === location.sport);
+  const sportLabel = sportObj?.label || location.sport;
 
   return (
-    <LocationPageClient location={location} averageRating={averageRating} />
+    <LocationDetailClient 
+      location={location} 
+      averageRating={averageRating}
+      sportLabel={sportLabel}
+    />
   );
 }

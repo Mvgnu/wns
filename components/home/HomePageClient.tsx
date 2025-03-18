@@ -17,21 +17,21 @@ interface SportHighlight {
   sport: string;
   label: string;
   description: string;
-  topGroup: {
-    id: string;
-    name: string;
-    _count: {
-      members: number;
-    };
-    [key: string]: any;
-  } | null;
-  upcomingEvent: {
-    id: string;
-    title: string;
-    startTime: string;
-    group: any;
-    [key: string]: any;
-  } | null;
+    topGroup: {
+      id: string;
+      name: string;
+      _count: {
+        members: number;
+      };
+      [key: string]: any;
+    } | null;
+    upcomingEvent: {
+      id: string;
+      title: string;
+      startTime: string;
+      group: any;
+      [key: string]: any;
+    } | null;
 }
 
 interface HomePageClientProps {
@@ -75,7 +75,7 @@ export default function HomePageClient({
         
         <div className="container mx-auto px-4 z-10 relative">
           <div className="flex flex-col md:flex-row items-center justify-between">
-            <div className="max-w-3xl">
+          <div className="max-w-3xl">
               <div className="flex space-x-2 mb-6">
                 <Badge className="bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 px-3 py-1">
                   Neu
@@ -90,7 +90,7 @@ export default function HomePageClient({
               
               <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
                 Entdecke deine <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white">Sport-Community</span>
-              </h1>
+            </h1>
               
               <p className="text-xl md:text-2xl mb-8 text-blue-100 font-light leading-relaxed">
                 Vernetze dich mit Gleichgesinnten und teile deine Leidenschaft für Sport.
@@ -111,19 +111,19 @@ export default function HomePageClient({
                 </div>
               </div>
               
-              <div className="flex flex-col sm:flex-row gap-4">
-                {!session ? (
+            <div className="flex flex-col sm:flex-row gap-4">
+              {!session ? (
                   <Button size="lg" className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg hover:shadow-xl transition-all" asChild>
                     <Link href="/auth/signup">Jetzt beitreten</Link>
-                  </Button>
-                ) : (
-                  <Button size="lg" className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg hover:shadow-xl transition-all" asChild>
-                    <Link href="/search">Entdecken</Link>
-                  </Button>
-                )}
-                <Button variant="outline" size="lg" className="bg-transparent border-white/50 text-white hover:bg-white/10 hover:border-white" asChild>
-                  <Link href="/locations">Orte entdecken</Link>
                 </Button>
+              ) : (
+                  <Button size="lg" className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg hover:shadow-xl transition-all" asChild>
+                  <Link href="/search">Entdecken</Link>
+                </Button>
+              )}
+                <Button variant="outline" size="lg" className="bg-transparent border-white/50 text-white hover:bg-white/10 hover:border-white" asChild>
+                <Link href="/locations">Orte entdecken</Link>
+              </Button>
               </div>
             </div>
             
@@ -234,9 +234,9 @@ export default function HomePageClient({
                             Nächstes Event
                           </Badge>
                         )}
-                      </div>
-                    </CardHeader>
-                    
+                  </div>
+                  </CardHeader>
+                  
                     <div className="px-4 space-y-3 pb-3">
                       {highlights?.topGroup && (
                         <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg hover:bg-blue-50 transition-colors">
@@ -269,9 +269,9 @@ export default function HomePageClient({
                           {sport.label} entdecken
                           <span className="ml-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">→</span>
                         </Link>
-                      </Button>
-                    </CardFooter>
-                  </Card>
+                    </Button>
+                  </CardFooter>
+                </Card>
                 );
               })}
             </div>
@@ -369,8 +369,8 @@ export default function HomePageClient({
               <div className="text-center">
                 <div className="text-4xl font-bold text-indigo-600 mb-2">{locationsCount}+</div>
                 <div className="text-gray-600">Entdeckte Orte</div>
-              </div>
-              <div className="text-center">
+            </div>
+            <div className="text-center">
                 <div className="text-4xl font-bold text-green-600 mb-2">{groupsCount}+</div>
                 <div className="text-gray-600">Sport-Gruppen</div>
               </div>
@@ -413,7 +413,7 @@ export default function HomePageClient({
                 </Button>
                 <Button variant="outline" size="lg" className="bg-transparent border-white/50 text-white hover:bg-white/10" asChild>
                   <Link href="/about">Mehr erfahren</Link>
-                </Button>
+          </Button>
               </div>
             </div>
             
