@@ -304,9 +304,10 @@ export default async function EventsPage({
   const filterDescription = timeframeDisplay(currentTimeframe);
 
   // Prepare sports categories for filter
-  const sportCategories = getSportsByCategory().map((category: { label: string; sports: any[] }) => ({
-    label: category.label,
-    items: category.sports.map((sport: { value: string; label: string }) => ({
+  const sportsByCategory = getSportsByCategory();
+  const sportCategories = Object.keys(sportsByCategory).map(categoryName => ({
+    label: categoryName,
+    items: sportsByCategory[categoryName].map(sport => ({
       value: sport.value,
       label: sport.label
     }))
