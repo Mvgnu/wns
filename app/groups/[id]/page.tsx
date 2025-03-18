@@ -126,6 +126,12 @@ export default async function GroupPage({ params }: { params: { id: string } }) 
               id: true,
             },
           },
+          location: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       },
       posts: {
@@ -218,7 +224,16 @@ export default async function GroupPage({ params }: { params: { id: string } }) 
               <TabsTrigger value="members" className="flex-1">Members</TabsTrigger>
             </TabsList>
             <TabsContent value="events">
-              <GroupClientWrapper type="events" events={group.events} userId={userId} />
+              <GroupClientWrapper 
+                type="events" 
+                events={group.events.map(event => ({
+                  ...event,
+                  attendees: event.attendees || [],
+                  locationName: event.location?.name,
+                  locationId: event.location?.id
+                }))} 
+                userId={userId} 
+              />
             </TabsContent>
             <TabsContent value="posts">
               <GroupPostsList 

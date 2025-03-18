@@ -17,7 +17,7 @@ type Event = {
     id: string;
     name: string | null;
   };
-  attendees: {
+  attendees?: {
     id: string;
   }[];
 };
@@ -45,13 +45,33 @@ export default function GroupEventsClient({ events, userId }: GroupEventsClientP
   return (
     <div className="space-y-4">
       {events.map((event) => {
+        // Ensure attendees exists and is an array
+        const attendees = event.attendees || [];
         const [isAttending, setIsAttending] = useState(
-          userId ? event.attendees.some(attendee => attendee.id === userId) : false
+          userId ? attendees.some(attendee => attendee.id === userId) : false
         );
-        const [attendeeCount, setAttendeeCount] = useState(event.attendees.length);
+        const [attendeeCount, setAttendeeCount] = useState(attendees.length);
         const [isLoading, setIsLoading] = useState(false);
         
         const isOrganizer = userId === event.organizer.id;
+        
+        // Format the event object to match EventCard props
+        const formattedEvent = {
+          id: event.id,
+          title: event.title,
+          description: event.description || undefined,
+          startTime: typeof event.startTime === 'string' ? event.startTime : new Date(event.startTime).toISOString(),
+          endTime: event.endTime ? (typeof event.endTime === 'string' ? event.endTime : new Date(event.endTime).toISOString()) : undefined,
+          location: event.locationName ? {
+            id: event.locationId || 'unknown',
+            name: event.locationName,
+          } : undefined,
+          attendees: attendees,
+          organizerId: event.organizer.id,
+          _count: {
+            attendees: attendeeCount
+          }
+        };
         
         const handleAttend = async () => {
           if (!userId) {
@@ -133,19 +153,10 @@ export default function GroupEventsClient({ events, userId }: GroupEventsClientP
         return (
           <EventCard
             key={event.id}
-            id={event.id}
-            title={event.title}
-            description={event.description || undefined}
-            image={event.image || undefined}
-            startTime={typeof event.startTime === 'string' ? event.startTime : new Date(event.startTime).toISOString()}
-            endTime={event.endTime ? (typeof event.endTime === 'string' ? event.endTime : new Date(event.endTime).toISOString()) : undefined}
-            locationName={event.locationName || undefined}
-            locationId={event.locationId || undefined}
-            attendeeCount={attendeeCount}
-            isOrganizer={isOrganizer}
-            isAttending={isAttending}
-            onAttend={handleAttend}
-            onLeave={handleLeave}
+            event={formattedEvent}
+            showActions={true}
+            showDescription={true}
+            showAttendees={true}
           />
         );
       })}
