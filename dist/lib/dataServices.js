@@ -1,8 +1,5 @@
 "use strict";
 'use server';
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSportImagePath = getSportImagePath;
 exports.getHomePageData = getHomePageData;
@@ -11,8 +8,6 @@ const prisma_1 = require("./prisma");
 const sportsData_1 = require("./sportsData");
 const next_1 = require("next-auth/next");
 const auth_1 = require("@/lib/auth");
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
 /**
  * Get the image path for a specific sport
  * @param sport - The sport value to get the image for
@@ -22,31 +17,14 @@ async function getSportImagePath(sport) {
     try {
         if (!sport)
             return '/images/default-sport.jpg';
-        // Normalize the sport name and create the filename with the 'sport-' prefix
+        console.log(`Looking for image for sport: ${sport}`);
+        // Just return the expected path without checking file existence
+        // This is more reliable in production and Next.js builds
         const normalizedSport = sport.replace(/\s+/g, '_');
         const imagePath = `/images/sports/sport-${normalizedSport}.jpg`;
-        // Try alternate version with hyphens if needed
-        const alternateImagePath = `/images/sports/sport-${normalizedSport.replace(/_/g, '-')}.jpg`;
-        // Check if the file exists in public directory
-        const publicDir = path_1.default.join(process.cwd(), 'public');
-        const imageFilePath = path_1.default.join(publicDir, imagePath.substring(1));
-        const alternateImageFilePath = path_1.default.join(publicDir, alternateImagePath.substring(1));
-        // Use Promise-based file existence check instead of synchronous fs.existsSync
-        try {
-            await fs_1.default.promises.access(imageFilePath);
-            return imagePath;
-        }
-        catch (_a) {
-            try {
-                await fs_1.default.promises.access(alternateImageFilePath);
-                return alternateImagePath;
-            }
-            catch (_b) {
-                // Log message for debugging
-                console.log(`Sport image not found for ${sport}, using default. Tried:`, imagePath, alternateImagePath);
-                return '/images/default-sport.jpg';
-            }
-        }
+        // Log for debugging
+        console.log(`Using image path: ${imagePath}`);
+        return imagePath;
     }
     catch (error) {
         console.error('Error finding sport image:', error);

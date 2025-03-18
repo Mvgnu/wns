@@ -11,28 +11,10 @@ import path from 'path';
 
 /**
  * Get the image path for a specific sport
- * @param sport - The sport value to get the image for
- * @returns The path to the sport image or a default image if not found
  */
-export async function getSportImagePath(sport: string): Promise<string> {
-  try {
-    if (!sport) return '/images/default-sport.jpg';
-    
-    console.log(`Looking for image for sport: ${sport}`);
-    
-    // Just return the expected path without checking file existence
-    // This is more reliable in production and Next.js builds
-    const normalizedSport = sport.replace(/\s+/g, '_');
-    const imagePath = `/images/sports/sport-${normalizedSport}.jpg`;
-    
-    // Log for debugging
-    console.log(`Using image path: ${imagePath}`);
-    
-    return imagePath;
-  } catch (error) {
-    console.error('Error finding sport image:', error);
-    return '/images/default-sport.jpg';
-  }
+export function getSportImagePath(sport: string): string {
+  if (!sport) return '/images/default-sport.jpg';
+  return `/images/sports/sport-${sport}.jpg`;
 }
 
 /**
@@ -194,11 +176,9 @@ export async function getHomePageData() {
     
     // Get all sport image paths from the local filesystem
     const sportImages: Record<string, string> = {};
-    await Promise.all(
-      Object.values(sportsByCategory).flat().map(async (sport) => {
-        sportImages[sport.value] = await getSportImagePath(sport.value);
-      })
-    );
+    Object.values(sportsByCategory).flat().forEach(sport => {
+      sportImages[sport.value] = getSportImagePath(sport.value);
+    });
     
     return {
       sportsByCategory,
