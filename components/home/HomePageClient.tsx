@@ -68,33 +68,66 @@ export default function HomePageClient({
   return (
     <div className="flex flex-col">
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-blue-600 to-blue-800 text-white py-24">
+      <section className="relative bg-gradient-to-br from-indigo-600 via-blue-700 to-blue-800 text-white py-24 overflow-hidden">
+        {/* Abstract shapes for visual interest */}
+        <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-500 opacity-20 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-72 h-72 bg-indigo-400 opacity-10 rounded-full blur-3xl"></div>
+        
         <div className="container mx-auto px-4 z-10 relative">
           <div className="max-w-3xl">
+            <div className="flex space-x-2 mb-6">
+              <Badge className="bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 px-3 py-1">
+                Neu
+              </Badge>
+              <Badge className="bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 px-3 py-1">
+                Community
+              </Badge>
+              <Badge className="bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 px-3 py-1">
+                Sport
+              </Badge>
+            </div>
+            
             <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
-              Entdecke deine Sport-Community
+              Entdecke deine <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white">Sport-Community</span>
             </h1>
-            <p className="text-xl md:text-2xl mb-8 text-blue-100">
-              Vernetze dich mit {usersCount}+ Sportlern, {groupsCount}+ Gruppen und {locationsCount}+ Orten. 
-              Finde Gleichgesinnte und teile deine Leidenschaft.
+            
+            <p className="text-xl md:text-2xl mb-8 text-blue-100 font-light leading-relaxed">
+              Vernetze dich mit Gleichgesinnten und teile deine Leidenschaft für Sport.
             </p>
+            
+            <div className="flex flex-wrap gap-y-3 gap-x-6 items-center mb-8">
+              <div className="flex items-center bg-white/10 backdrop-blur-sm rounded-full px-4 py-2">
+                <Users className="w-5 h-5 mr-2 text-blue-200" />
+                <span className="font-semibold text-white">{usersCount}+ Mitglieder</span>
+              </div>
+              <div className="flex items-center bg-white/10 backdrop-blur-sm rounded-full px-4 py-2">
+                <MapPin className="w-5 h-5 mr-2 text-blue-200" />
+                <span className="font-semibold text-white">{locationsCount}+ Orte</span>
+              </div>
+              <div className="flex items-center bg-white/10 backdrop-blur-sm rounded-full px-4 py-2">
+                <Calendar className="w-5 h-5 mr-2 text-blue-200" />
+                <span className="font-semibold text-white">{groupsCount}+ Gruppen</span>
+              </div>
+            </div>
+            
             <div className="flex flex-col sm:flex-row gap-4">
               {!session ? (
-                <Button size="lg" className="bg-white text-blue-600 hover:bg-blue-50" asChild>
+                <Button size="lg" className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg hover:shadow-xl transition-all" asChild>
                   <Link href="/auth/signup">Jetzt beitreten</Link>
                 </Button>
               ) : (
-                <Button size="lg" className="bg-white text-blue-600 hover:bg-blue-50" asChild>
+                <Button size="lg" className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg hover:shadow-xl transition-all" asChild>
                   <Link href="/search">Entdecken</Link>
                 </Button>
               )}
-              <Button variant="outline" size="lg" className="bg-transparent border-white text-white hover:bg-white hover:text-blue-600" asChild>
+              <Button variant="outline" size="lg" className="bg-transparent border-white/50 text-white hover:bg-white/10 hover:border-white" asChild>
                 <Link href="/locations">Orte entdecken</Link>
               </Button>
             </div>
           </div>
         </div>
-        <div className="absolute inset-0 bg-black opacity-20"></div>
+        
+        <div className="absolute inset-0 bg-black opacity-10"></div>
       </section>
 
       {/* Group Recommendations for logged in users */}
