@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getSafeServerSession } from "@/lib/sessionHelper";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
 
 // GET handler for retrieving a single event by ID
 export async function GET(
@@ -18,8 +21,8 @@ export async function GET(
       );
     }
     
-    // Get the current user's session
-    const session = await getServerSession(authOptions);
+    // Use safe session helper to get the current user
+    const session = await getSafeServerSession();
     const userId = session?.user?.id;
     
     // First check if the event exists and if it belongs to a private group

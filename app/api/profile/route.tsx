@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getSafeServerSession } from "@/lib/sessionHelper";
 import { prisma } from "@/lib/prisma";
 
 // Schema for profile update
@@ -16,6 +17,16 @@ const profileUpdateSchema = z.object({
 // GET handler for retrieving user profiles
 export async function GET(req: NextRequest) {
   try {
+    // Use safe session helper to handle JWT errors gracefully
+    const session = await getSafeServerSession();
+    
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: "Unauthorized - Please log in to view your profile" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId");
 
@@ -59,7 +70,6 @@ export async function GET(req: NextRequest) {
     }
 
     // Check if the current user follows this profile
-    const session = await getServerSession(authOptions);
     let isFollowing = false;
     if (session?.user) {
       // Here you would check if the current user follows the requested profile

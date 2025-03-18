@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getSafeServerSession } from "@/lib/sessionHelper";
 import { prisma } from "@/lib/prisma";
 import { sendNotificationToUser } from "@/lib/notificationService";
 import { addDays, addWeeks, addMonths, isBefore, getDay, getDate } from "date-fns";
@@ -252,8 +253,8 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit;
     const includeRecurring = searchParams.get("includeRecurring") === "true";
 
-    // Get the current user for group access checks
-    const session = await getServerSession(authOptions);
+    // Get the current user for group access checks - use safe session helper
+    const session = await getSafeServerSession();
     const userId = session?.user?.id;
 
     // Build query based on filters
@@ -515,9 +516,9 @@ export async function GET(req: NextRequest) {
 // POST handler for creating new events
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getSafeServerSession();
     if (!session?.user) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return new NextResponse("Unauthorized - Please log in to create events", { status: 401 });
     }
 
     const user = await prisma.user.findUnique({

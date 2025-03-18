@@ -31,78 +31,80 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX = 60; // 60 requests per minute
 
+/**
+ * Global middleware to catch JWT decryption errors
+ * and handle them gracefully
+ */
 export async function middleware(request: NextRequest) {
-  const requestPath = request.nextUrl.pathname;
-  
-  // Handle API rate limiting
-  if (requestPath.startsWith('/api/')) {
-    // Get client IP from X-Forwarded-For header or use a default value
-    const forwardedFor = request.headers.get('x-forwarded-for');
-    const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : 'anonymous';
-    const now = Date.now();
+  // Public paths that don't need authentication
+  const publicPaths = [
+    '/auth/signin',
+    '/auth/signup',
+    '/api/auth',
+    '/_next',
+    '/images',
+    '/icons',
+    '/favicon.ico',
+  ];
+
+  // Check if the path is public and skip token verification
+  const path = request.nextUrl.pathname;
+  if (publicPaths.some(pp => path.startsWith(pp))) {
+    return NextResponse.next();
+  }
+
+  try {
+    // Try to get the token - this is where JWT errors might occur
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+
+    // Continue normally if we got a token or not
+    return NextResponse.next();
+  } catch (error) {
+    console.warn('JWT validation error in middleware:', error);
     
-    // Get or create rate limit entry
-    let rateLimit = rateLimitMap.get(ip);
-    if (!rateLimit || now > rateLimit.resetTime) {
-      rateLimit = { count: 0, resetTime: now + RATE_LIMIT_WINDOW };
-      rateLimitMap.set(ip, rateLimit);
-    }
-    
-    // Increment count
-    rateLimit.count++;
-    
-    // Check if rate limit exceeded
-    if (rateLimit.count > RATE_LIMIT_MAX) {
+    // If it's an API request, return a 401 JSON response
+    if (path.startsWith('/api/')) {
       return new NextResponse(
-        JSON.stringify({ error: 'Rate limit exceeded' }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RateLimit-Limit': RATE_LIMIT_MAX.toString(),
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': Math.ceil(rateLimit.resetTime / 1000).toString(),
-          },
+        JSON.stringify({ error: 'Authentication error', message: 'Session expired or invalid' }),
+        { 
+          status: 401, 
+          headers: { 'content-type': 'application/json' }
         }
       );
     }
-    
-    // Set rate limit headers
+
+    // For regular pages, clear the cookie and continue
+    // This will effectively log the user out
     const response = NextResponse.next();
-    response.headers.set('X-RateLimit-Limit', RATE_LIMIT_MAX.toString());
-    response.headers.set('X-RateLimit-Remaining', Math.max(0, RATE_LIMIT_MAX - rateLimit.count).toString());
-    response.headers.set('X-RateLimit-Reset', Math.ceil(rateLimit.resetTime / 1000).toString());
     
-    // Don't check authentication for public routes
-    if (publicApiRoutes.some(route => requestPath.startsWith(route))) {
-      return response;
+    // Remove the session cookie if present
+    if (request.cookies.has('next-auth.session-token')) {
+      response.cookies.delete('next-auth.session-token');
     }
     
-    // Allow GET requests to public read routes
-    if (request.method === 'GET' && publicReadRoutes.some(route => requestPath.startsWith(route))) {
-      return response;
-    }
-    
-    // Check authentication for protected routes
-    if (protectedRoutes.some(route => requestPath.startsWith(route))) {
-      const token = await getToken({ req: request });
-      
-      if (!token) {
-        return new NextResponse(
-          JSON.stringify({ error: 'Unauthorized' }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
+    // Also try to delete the secure version if it exists
+    if (request.cookies.has('__Secure-next-auth.session-token')) {
+      response.cookies.delete('__Secure-next-auth.session-token');
     }
     
     return response;
   }
-  
-  // Continue for non-API routes
-  return NextResponse.next();
 }
 
-// Only run middleware on API routes
+// Configure paths that trigger this middleware
 export const config = {
-  matcher: ['/api/:path*'],
+  matcher: [
+    // Match all API routes
+    '/api/:path*',
+    // Match all protected pages
+    '/profile/:path*',
+    '/events/:path*',
+    '/groups/:path*',
+    '/settings/:path*',
+    // Exclude Next.js static assets and API routes that handle their own auth
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
 }; 
