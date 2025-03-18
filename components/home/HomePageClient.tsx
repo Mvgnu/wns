@@ -121,7 +121,7 @@ export default function HomePageClient({
               {sportsByCategory[category]?.map((sport) => {
                 // Safely get the highlight for this sport
                 const highlights = findSportHighlight(category, sport.value);
-                const imageUrl = sportImages?.[sport.value] || '/images/default-sport.jpg';
+                const imageUrl = `/images/sports/sport-${sport.value}.jpg`;
 
                 return (
                   <Card key={sport.value} className="overflow-hidden hover:shadow-lg transition-all duration-300">

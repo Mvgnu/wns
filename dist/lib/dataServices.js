@@ -1,21 +1,12 @@
 "use strict";
 'use server';
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSportImagePath = getSportImagePath;
 exports.getHomePageData = getHomePageData;
 // ^ Ensure server-side execution
 const prisma_1 = require("./prisma");
 const sportsData_1 = require("./sportsData");
 const next_1 = require("next-auth/next");
 const auth_1 = require("@/lib/auth");
-/**
- * Get the image path for a specific sport
- */
-function getSportImagePath(sport) {
-    if (!sport)
-        return '/images/default-sport.jpg';
-    return `/images/sports/sport-${sport}.jpg`;
-}
 /**
  * Data fetching service for the homepage
  * This centralizes all database queries for better organization and testability
@@ -157,10 +148,10 @@ async function getHomePageData() {
             // Filter out sports with no highlights to optimize the payload
             categoryHighlights[category] = sportHighlights.filter(highlight => highlight.topGroup !== null || highlight.upcomingEvent !== null);
         }));
-        // Get all sport image paths from the local filesystem
+        // Create hardcoded sport image paths
         const sportImages = {};
         Object.values(sportsByCategory).flat().forEach(sport => {
-            sportImages[sport.value] = getSportImagePath(sport.value);
+            sportImages[sport.value] = `/images/sports/sport-${sport.value}.jpg`;
         });
         return {
             sportsByCategory,
