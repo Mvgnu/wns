@@ -85,7 +85,7 @@ export default async function GroupsPage({
         {
           members: {
             some: {
-              userId,
+              id: userId,
             },
           },
         },
@@ -158,7 +158,7 @@ export default async function GroupsPage({
             {
               members: {
                 some: {
-                  userId,
+                  id: userId,
                 },
               },
             },
