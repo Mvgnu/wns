@@ -1,4 +1,7 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.addConnection = addConnection;
 exports.removeConnection = removeConnection;
@@ -39,7 +42,7 @@ function sendNotificationToUser(userId, notification) {
         }
     });
 }
-const prisma_1 = require("./prisma");
+const prisma_1 = __importDefault(require("./prisma"));
 const date_fns_1 = require("date-fns");
 // Function to create and send event reminder notifications
 async function sendEventReminders() {
@@ -47,7 +50,7 @@ async function sendEventReminders() {
         // Find events happening in the next 24 hours
         const tomorrow = (0, date_fns_1.addDays)(new Date(), 1);
         const today = (0, date_fns_1.startOfDay)(new Date());
-        const upcomingEvents = await prisma_1.prisma.event.findMany({
+        const upcomingEvents = await prisma_1.default.event.findMany({
             where: {
                 startTime: {
                     gte: today,
@@ -82,7 +85,7 @@ async function sendEventReminders() {
             // Create notifications for all attendees
             for (const attendee of event.attendees) {
                 // Skip if reminder already sent
-                const existingReminder = await prisma_1.prisma.notification.findFirst({
+                const existingReminder = await prisma_1.default.notification.findFirst({
                     where: {
                         userId: attendee.id,
                         type: "EVENT_REMINDER",
@@ -92,7 +95,7 @@ async function sendEventReminders() {
                 if (existingReminder)
                     continue;
                 // Create the notification
-                const notification = await prisma_1.prisma.notification.create({
+                const notification = await prisma_1.default.notification.create({
                     data: {
                         userId: attendee.id,
                         type: "EVENT_REMINDER",
@@ -116,7 +119,7 @@ async function sendEventReminders() {
 async function generateRecurringEventInstances() {
     try {
         // Find recurring events that might need more instances
-        const recurringEvents = await prisma_1.prisma.event.findMany({
+        const recurringEvents = await prisma_1.default.event.findMany({
             where: {
                 isRecurring: true,
                 recurringPattern: { not: null },
@@ -131,7 +134,7 @@ async function generateRecurringEventInstances() {
         const thirtyDaysFromNow = (0, date_fns_1.addDays)(new Date(), 30);
         for (const template of recurringEvents) {
             // Find the latest instance
-            const latestInstance = await prisma_1.prisma.event.findFirst({
+            const latestInstance = await prisma_1.default.event.findFirst({
                 where: {
                     parentEventId: template.id,
                 },

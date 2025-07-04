@@ -1,8 +1,11 @@
 "use strict";
 'use server';
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getRecommendedGroups = getRecommendedGroups;
-const prisma_1 = require("./prisma");
+const prisma_1 = __importDefault(require("./prisma"));
 // Calculate distance between two points in kilometers using Haversine formula
 function getDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // Earth's radius in km
@@ -31,7 +34,7 @@ function calculateDistance(user, group) {
 }
 async function getRecommendedGroups({ userId, limit = 5, includeLocation = true, includeSports = true, includeActivity = true, }) {
     // Get the user with their preferences
-    const user = await prisma_1.prisma.user.findUnique({
+    const user = await prisma_1.default.user.findUnique({
         where: { id: userId },
         select: {
             sports: true,
@@ -52,7 +55,7 @@ async function getRecommendedGroups({ userId, limit = 5, includeLocation = true,
             {
                 NOT: {
                     id: {
-                        in: user.memberGroups.map(g => g.id),
+                        in: user.memberGroups.map((g) => g.id),
                     },
                 },
             },
@@ -73,7 +76,7 @@ async function getRecommendedGroups({ userId, limit = 5, includeLocation = true,
         ];
     }
     // Get groups matching the criteria
-    const groups = await prisma_1.prisma.group.findMany({
+    const groups = await prisma_1.default.group.findMany({
         where: whereClause,
         include: {
             owner: {
@@ -93,7 +96,7 @@ async function getRecommendedGroups({ userId, limit = 5, includeLocation = true,
         take: limit * 2, // Get more than needed for filtering
     });
     // Calculate scores for each group
-    const scoredGroups = groups.map(group => {
+    const scoredGroups = groups.map((group) => {
         let score = 0;
         // Sport match score
         if (includeSports && user.sports && user.sports.includes(group.sport)) {

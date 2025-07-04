@@ -1,10 +1,8 @@
-export const dynamic = "force-static";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { sendNotificationToUser } from "@/lib/notificationService";
-import { auth } from '@/lib/auth';
 
 // Create a new notification and send it via WebSocket if needed
 export async function POST(req: NextRequest) {
@@ -48,63 +46,58 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/notifications - Get notifications for the current user
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
+    // Get the current user's session
     const session = await getServerSession(authOptions);
     
-    // Check if user is authenticated
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Return empty notifications if not authenticated
+    if (!session?.user?.id) {
+      return NextResponse.json({ 
+        notifications: [],
+        unreadCount: 0
+      });
     }
     
-    const userId = session.user.id as string;
-    
-    // Get pagination params from query string
-    const searchParams = request.nextUrl.searchParams;
-    const limit = parseInt(searchParams.get('limit') || '20', 10);
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const offset = (page - 1) * limit;
-    
-    // Get notifications for the current user, ordered by creation date (newest first)
-    const notifications = await prisma.notification.findMany({
-      where: {
-        userId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: limit,
-      skip: offset,
-    });
-    
-    // Get total count of notifications for pagination
-    const totalCount = await prisma.notification.count({
-      where: {
-        userId,
-      },
-    });
-    
-    // Calculate pagination metadata
-    const totalPages = Math.ceil(totalCount / limit);
-    const hasMore = page < totalPages;
-    
-    return NextResponse.json({
-      notifications,
-      pagination: {
-        page,
-        limit,
-        totalCount,
-        totalPages,
-        hasMore,
-      },
-    });
+    // Try to fetch notifications from the database
+    try {
+      const notifications = await prisma.notification.findMany({
+        where: {
+          userId: session.user.id,
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 10,
+      });
+      
+      // Count unread notifications
+      const unreadCount = await prisma.notification.count({
+        where: {
+          userId: session.user.id,
+          read: false
+        }
+      });
+      
+      return NextResponse.json({ 
+        notifications, 
+        unreadCount
+      });
+    } catch (dbError) {
+      console.error("Database error fetching notifications:", dbError);
+      
+      // Return empty array as fallback (better UX than error)
+      return NextResponse.json({ 
+        notifications: [],
+        unreadCount: 0
+      });
+    }
   } catch (error) {
-    console.error('Error fetching notifications:', error);
+    console.error("Error in notifications API:", error);
+    
+    // Return a helpful error response
     return NextResponse.json(
-      { error: 'Failed to fetch notifications' },
+      { error: "Failed to load notifications. Please try again later." },
       { status: 500 }
     );
   }

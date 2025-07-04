@@ -4,7 +4,7 @@ import { createLocationSchema, createUGCSchema, combineSchemas } from '@/lib/sch
 
 // Generate metadata for location detail pages
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  // Get location data
+  // Get location data with reviews
   const location = await prisma.location.findUnique({
     where: { id: params.id },
     include: {
@@ -20,6 +20,11 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
           reviews: true,
         },
       },
+      reviews: {
+        select: {
+          rating: true,
+        },
+      },
     },
   });
 
@@ -30,11 +35,21 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
     };
   }
 
+  // Calculate average rating
+  let averageRating = null;
+  if (location.reviews.length > 0) {
+    const totalRating = location.reviews.reduce((sum, review) => sum + review.rating, 0);
+    averageRating = totalRating / location.reviews.length;
+  }
+
   // Base URL for schemas
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://wns-community.com';
   
-  // Create schema.org schemas
-  const locationSchema = createLocationSchema(location, baseUrl);
+  // Create schema.org schemas with averageRating
+  const locationSchema = createLocationSchema({
+    ...location,
+    averageRating,
+  }, baseUrl);
   
   // Add UGC schema for user-generated content
   const ugcSchema = createUGCSchema({

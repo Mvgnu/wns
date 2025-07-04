@@ -46,6 +46,9 @@ model User {
   // User preferences
   notificationPreferences NotificationPreferences?
   
+  // User roles and permissions
+  isAdmin     Boolean @default(false)
+  
   // Relationships
   posts         Post[]
   comments      Comment[]
@@ -65,11 +68,25 @@ model User {
   participationResponses ParticipationResponse[]
   instanceResponses EventInstanceResponse[]
   
+  // New relationship for co-organizing events
+  coOrganizerEvents EventOrganizer[]
+  
   // Group admin relationship
   adminGroups GroupAdmin[]
   
   // User device tokens for push notifications
   deviceTokens UserDeviceToken[]
+
+  // New relationships
+  managedPlaces PlaceStaff[]
+
+  // New relations
+  placeClaims PlaceClaim[]
+  claimsReviewed PlaceClaim[] @relation("ClaimReviewer")
+  
+  // Missing relations added to fix validation errors
+  eventPurchases EventPurchase[]
+  groupMemberStatuses GroupMemberStatus[]
 
   // Indexes for better query performance
   @@index([name])
@@ -78,6 +95,19 @@ model User {
   @@index([latitude, longitude])
   @@index([activityLevel])
   @@index([city, state, country])
+
+  groupMemberRoles GroupMemberRole[]
+  clubMemberRoles ClubMemberRole[]
+  clubRoleAssignments ClubMemberRole[] @relation("ClubRoleAssignments")
+  groupRoleAssignments GroupMemberRole[] @relation("GroupRoleAssignments")
+  
+  // Add relationship for videos
+  uploadedLocationVideos   LocationVideo[]       // Videos uploaded by this user
+  
+  // Feed post relationships
+  feedPosts        FeedPost[]        // Feed posts authored by this user
+  feedPostReplies  FeedPostReply[]   // Feed post replies by this user
+  feedPostLikes    FeedPostLike[]    // Feed post likes by this user
 }
 
 // Group model
@@ -115,6 +145,23 @@ model Group {
   invites     GroupInvite[]
   admins      GroupAdmin[]
 
+  // Enhanced group configuration
+  entryRules    Json        @default("{\"requireApproval\": false, \"allowPublicJoin\": true, \"inviteOnly\": false, \"joinCode\": null}")
+  settings      Json        @default("{\"allowMemberPosts\": true, \"allowMemberEvents\": false, \"visibility\": \"public\", \"contentModeration\": \"low\"}")
+
+  // Role and club relationship
+  roles         GroupRole[]
+  memberRoles   GroupMemberRole[]
+  clubGroups    ClubGroup[]
+  
+  // New fields
+  slug          String?     @unique // URL-friendly identifier
+  status        String      @default("active") // "active", "inactive", "archived"
+  memberCount   Int         @default(0) // Denormalized count for performance
+  
+  // Member status tracking
+  memberStatuses GroupMemberStatus[]
+
   // Indexes for better query performance
   @@index([name])
   @@index([sport])
@@ -125,6 +172,8 @@ model Group {
   @@index([latitude, longitude])
   @@index([city, state, country])
   @@index([activityLevel])
+  @@index([status])
+  @@index([slug])
 }
 
 // Post model
@@ -193,47 +242,236 @@ model Like {
   @@index([createdAt])
 }
 
-// Location model (for skate spots, trails, etc.)
+// Location model (enhanced to support different types of places)
 model Location {
   id          String   @id @default(cuid())
   name        String
   description String?
-  type        String   // e.g., "skatepark", "trail", "fishing spot"
-  sport       String   // e.g., "skating", "hiking", "fishing" (kept for backward compatibility)
+  
+  // Place type classification
+  placeType   String   // "facility", "trail", "spot" - legacy field
+  detailType  String   // Specific type: "studio", "gym", "skatepark", "trail", "viewpoint", etc.
+  
+  // Sport classifications
+  sport       String   // Main sport (kept for backward compatibility)
   sports      String[] // Array of sports for multi-sport locations
+  
+  // Common location data
   latitude    Float
   longitude   Float
   address     String?
-  images      String[] // Array of image URLs
-  rating      Float?   // Average rating
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  city        String?
+  state       String?
+  country     String?
+  zipCode     String?
+  image       String?  // Main image URL
+  images      String[] // Additional image URLs
+  
+  // Enhanced contact/business info for facilities
+  website     String?
+  phone       String?
+  email       String?
+  openingHours Json?   // JSON structure with opening hours
+  
+  // Enhanced place metadata
+  verified    Boolean  @default(false) // If this place is verified by admins
+  featured    Boolean  @default(false) // If this place should be featured in listings
+  priceRange  String?  // "free", "low", "medium", "high"
+  
+  // Facility details
+  capacity    Int?     // Only for facilities: how many people can use it at once
+  hasParking  Boolean? // Only for facilities
+  isAccessible Boolean? // Wheelchair accessible
+  
   // For line-based locations (trails, routes)
   isLineBased Boolean  @default(false)
   coordinates Json?    // Array of coordinates for line-based locations
+  difficulty  String?  // "easy", "medium", "hard" - mostly for trails
+  distance    Float?   // Distance in km - for trails
+  elevation   Float?   // Elevation gain in meters - for trails
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relationships
   addedBy     User     @relation(fields: [addedById], references: [id])
   addedById   String
   events      Event[]
   reviews     LocationReview[]
+  amenities   PlaceAmenity[] // New relation to amenities
+  staff       PlaceStaff[]   // New relation to staff/managers
+  claims      PlaceClaim[]
+  videos      LocationVideo[] // New relation to videos
+  prices      LocationPrice[] // New relation to pricing
+  
+  // New enum-based place type and relation to club locations
+  type          PlaceType    @default(building)
+  clubLocations ClubLocation[]
+  
+  // Type-specific metadata based on place type
+  typeMetadata  Json?        // Stores type-specific details (building floors, trail difficulty, spot features)
+  
+  // For buildings: ownership and access
+  isPublic      Boolean      @default(true)  // Whether the building is publicly accessible
+  ownershipType String?      // "public", "private", "club", "commercial"
+  
+  // For trails: route info
+  routeType     String?      // "loop", "out-and-back", "point-to-point"
+  surfaceType   String?      // "paved", "dirt", "mixed", "gravel"
+  
+  // For spots: feature info
+  spotFeatures  String[]     // Array of features this spot offers
 
   // Indexes for better query performance
   @@index([name])
-  @@index([type])
+  @@index([placeType, detailType])
   @@index([sport])
+  @@index([sports])
   @@index([addedById])
   @@index([createdAt])
   @@index([latitude, longitude]) // Geospatial index
+  @@index([verified, featured])
+  @@index([priceRange])
+  @@index([difficulty])
+  @@index([type])
+  @@index([city, state, country])
 }
 
-// Location Review model
+// Model for location videos
+model LocationVideo {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  url         String   // URL to the video (YouTube, Vimeo, or other platforms)
+  thumbnailUrl String? // URL to video thumbnail
+  duration    Int?     // Video duration in seconds
+  featured    Boolean  @default(false)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relationships
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId  String
+  uploadedBy  User     @relation(fields: [uploadedById], references: [id])
+  uploadedById String
+  
+  @@index([locationId])
+  @@index([uploadedById])
+}
+
+// Model for location pricing information
+model LocationPrice {
+  id          String   @id @default(cuid())
+  name        String   // e.g., "Day Pass", "Monthly Membership", "Student Discount"
+  description String?
+  amount      Float
+  currency    String   @default("EUR")
+  period      String?  // e.g., "day", "month", "year" for recurring prices
+  isRecurring Boolean  @default(false)
+  
+  // For course-specific pricing
+  courseId    String?  // If this price is for a specific course/class
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relationships
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId  String
+  
+  @@index([locationId])
+  @@index([courseId])
+}
+
+// Define amenity types
+enum AmenityType {
+  SHOWER            @map("shower")            // Duschen
+  FOOD              @map("food")              // Essen/Café
+  SHOP              @map("shop")              // Shop
+  WELLNESS          @map("wellness")          // Wellness/Spa
+  LOCKER_ROOM       @map("locker_room")       // Umkleiden
+  PARKING           @map("parking")           // Parkplatz
+  CARD_PAYMENT      @map("card_payment")      // Kartenzahlung
+  WIFI              @map("wifi")              // Wi-Fi
+  RESTROOM          @map("restroom")          // Toiletten
+  WATER_FOUNTAIN    @map("water_fountain")    // Trinkbrunnen
+  EQUIPMENT_RENTAL  @map("equipment_rental")  // Ausrüstungsverleih
+  FIRST_AID         @map("first_aid")         // Erste Hilfe
+  CHILDCARE         @map("childcare")         // Kinderbetreuung
+  DISABLED_ACCESS   @map("disabled_access")   // Barrierefreiheit
+  BIKE_STORAGE      @map("bike_storage")      // Fahrradabstellplatz
+  TRAINING_AREA     @map("training_area")     // Trainingsbereich
+}
+
+// New model for place amenities
+model PlaceAmenity {
+  id          String      @id @default(cuid())
+  type        AmenityType // Type of amenity using the enum
+  details     Json?       // Additional details about the amenity
+  isAvailable Boolean     @default(true) // Whether the amenity is currently available
+  
+  // Relationships
+  location    Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId  String
+  
+  @@unique([locationId, type])
+  @@index([locationId])
+  @@index([type])
+}
+
+// New model for place staff/managers
+model PlaceStaff {
+  id              String   @id @default(cuid())
+  role            String   // "owner", "manager", "instructor", "employee"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Staff permissions
+  canEditPlace    Boolean @default(false)
+  canManageEvents Boolean @default(false)
+  canManageStaff  Boolean @default(false)
+  
+  // Enhanced staff profile
+  title           String?  // Job title, e.g., "Head Coach", "Fitness Instructor"
+  bio             String?  // Staff member bio/description
+  specialties     String[] // Array of specialties, e.g., ["CrossFit", "Yoga", "Personal Training"]
+  certifications  String[] // Array of certifications
+  yearsExperience Int?     // Years of experience in their field
+  schedule        Json?    // Working schedule/hours
+  socialLinks     Json?    // Social media profiles, website, etc.
+  
+  // Relationships
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId  String
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  
+  @@unique([locationId, userId])
+  @@index([locationId])
+  @@index([userId])
+}
+
+// Extended LocationReview model with more details
 model LocationReview {
   id          String   @id @default(cuid())
   rating      Float
   comment     String?
+  
+  // New fields for more detailed reviews
+  cleanliness Float?   // Rating for cleanliness 1-5
+  service     Float?   // Rating for service 1-5 
+  value       Float?   // Rating for value 1-5
+  atmosphere  Float?   // Rating for atmosphere 1-5
+  
+  reviewTitle String?  // Optional title for the review
+  reviewImages String[] // Array of images attached to the review
+  
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relationships
   location    Location @relation(fields: [locationId], references: [id])
@@ -241,12 +479,16 @@ model LocationReview {
   user        User     @relation(fields: [userId], references: [id])
   userId      String
 
+  // Helpfulness voting
+  helpfulCount Int @default(0)
+  
   @@unique([userId, locationId]) // A user can only review a location once
   // Indexes for better query performance
   @@index([userId])
   @@index([locationId])
   @@index([rating])
   @@index([createdAt])
+  @@index([helpfulCount])
 }
 
 // Event model
@@ -270,6 +512,19 @@ model Event {
   // Access control - who can join this event
   joinRestriction   String   @default("everyone") // "everyone" or "groupOnly"
   
+  // New pricing fields
+  isPaid            Boolean  @default(false)
+  price             Float?   // Price in the default currency (e.g., EUR)
+  priceCurrency     String?  // Currency code (e.g., "EUR")
+  priceDescription  String?  // Additional details about pricing/tiers
+  
+  // New capacity and availability fields
+  maxAttendees      Int?     // Maximum number of attendees allowed
+  isSoldOut         Boolean  @default(false)  // Whether the event is at capacity
+  
+  // New fields for highlighted amenities
+  highlightedAmenities String[] // IDs of amenities to highlight for this event
+
   // Relationships
   organizer         User     @relation("EventOrganizer", fields: [organizerId], references: [id])
   organizerId       String
@@ -278,6 +533,9 @@ model Event {
   groupId           String?
   location          Location? @relation(fields: [locationId], references: [id])
   locationId        String?
+  
+  // New relationships for co-organizers
+  coOrganizers      EventOrganizer[]
   
   // New relationships for reminders and participation
   reminders         EventReminder[]
@@ -288,6 +546,10 @@ model Event {
   parentEvent       Event?   @relation("RecurringEventInstances", fields: [parentEventId], references: [id])
   childEvents       Event[]  @relation("RecurringEventInstances")
 
+  // New pricing relationships
+  pricingTiers        PricingTier[]
+  discountCodes       DiscountCode[]
+
   // Indexes for better query performance
   @@index([title])
   @@index([organizerId])
@@ -297,6 +559,28 @@ model Event {
   @@index([createdAt])
   @@index([isRecurring])
   @@index([parentEventId])
+  @@index([isPaid])
+}
+
+// New model for event co-organizers
+model EventOrganizer {
+  id            String   @id @default(cuid())
+  role          String   @default("co-organizer") // "co-organizer", "instructor", "host", etc.
+  createdAt     DateTime @default(now())
+  
+  // Relationships
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId       String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  
+  // A user can only be a co-organizer of an event once
+  @@unique([eventId, userId])
+  
+  // Indexes for better query performance
+  @@index([eventId])
+  @@index([userId])
+  @@index([role])
 }
 
 // Event Reminder model
@@ -518,4 +802,368 @@ model EventInstanceResponse {
   @@index([userId])
   @@index([response])
   @@index([date])
+}
+
+// New model for place ownership claims
+model PlaceClaim {
+  id            String   @id @default(cuid())
+  status        String   @default("pending") // "pending", "approved", "rejected"
+  claimReason   String   // Why the user is claiming the place
+  proofDetails  String?  // Optional details about proof of ownership
+  contactPhone  String?
+  contactEmail  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relationships
+  location    Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId  String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  reviewedBy  User?    @relation("ClaimReviewer", fields: [reviewedById], references: [id])
+  reviewedById String?
+  reviewNotes String?  // Admin notes on the claim
+  
+  @@index([locationId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// New model for tiered pricing
+model PricingTier {
+  id                  String            @id @default(cuid())
+  eventId             String
+  name                String            // E.g., "Early Bird", "VIP", "Standard"
+  description         String?
+  price               Int               // Price in smallest currency unit
+  capacity            Int?              // Optional capacity limit per tier
+  startDate           DateTime?         // Optional start date for tier validity
+  endDate             DateTime?         // Optional end date for tier validity
+  isActive            Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  
+  // Relations
+  event               Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  purchases           EventPurchase[]
+  
+  @@index([eventId])
+}
+
+// New model for discount codes
+model DiscountCode {
+  id                  String            @id @default(cuid())
+  eventId             String
+  code                String
+  discountType        String            // "percentage" or "fixed"
+  discountValue       Int               // Percentage or fixed amount
+  maxUses             Int?              // Optional maximum number of uses
+  currentUses         Int               @default(0)
+  startDate           DateTime?         // Optional start date for code validity
+  endDate             DateTime?         // Optional end date for code validity
+  isActive            Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  
+  // Relations
+  event               Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  purchases           EventPurchase[]
+  
+  @@unique([eventId, code])
+  @@index([code])
+  @@index([eventId])
+}
+
+// New model to track purchases with pricing details
+model EventPurchase {
+  id                  String            @id @default(cuid())
+  userId              String
+  eventId             String
+  pricingTierId       String?
+  discountCodeId      String?
+  originalPrice       Int               // Original price before discounts
+  finalPrice          Int               // Final price after discounts
+  currency            String
+  purchaseDate        DateTime          @default(now())
+  paymentStatus       String            // "pending", "completed", "refunded", "failed"
+  
+  // Relations
+  user                User              @relation(fields: [userId], references: [id])
+  pricingTier         PricingTier?      @relation(fields: [pricingTierId], references: [id])
+  discountCode        DiscountCode?     @relation(fields: [discountCodeId], references: [id])
+  
+  @@index([userId])
+  @@index([eventId])
+}
+
+// Place type enum
+enum PlaceType {
+  building
+  trail
+  spot
+}
+
+// Enhanced GroupRole model
+model GroupRole {
+  id            String       @id @default(uuid())
+  groupId       String
+  name          String
+  description   String?
+  color         String?
+  permissions   String[]
+  isDefault     Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now())
+  
+  // Relations
+  group         Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberRoles   GroupMemberRole[]
+  
+  @@unique([groupId, name])
+}
+
+// Enhanced GroupMemberRole junction model
+model GroupMemberRole {
+  id            String       @id @default(uuid())
+  groupId       String
+  userId        String
+  roleId        String
+  assignedBy    String
+  assignedAt    DateTime     @default(now())
+  
+  // Relations
+  group         Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          GroupRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedByUser User        @relation("GroupRoleAssignments", fields: [assignedBy], references: [id], onDelete: Cascade)
+  
+  // Unique constraint
+  @@unique([groupId, userId, roleId])
+  @@index([groupId, userId])
+  @@index([roleId])
+}
+
+// New Club model
+model Club {
+  id            String       @id @default(uuid())
+  name          String
+  description   String?
+  logo          String?
+  coverImage    String?
+  website       String?
+  contactEmail  String?
+  contactPhone  String?
+  foundedYear   Int?
+  status        String       @default("active")
+  settings      Json?        @default("{}")
+  verified      Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now())
+  
+  // Relations
+  locations     ClubLocation[]
+  sports        ClubSport[]
+  groups        ClubGroup[]
+  roles         ClubRole[]
+  memberRoles   ClubMemberRole[]
+  
+  @@index([name])
+}
+
+// New ClubLocation junction model
+model ClubLocation {
+  id            String       @id @default(uuid())
+  clubId        String
+  locationId    String
+  isPrimary     Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  
+  // Relations
+  club          Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  location      Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  @@index([clubId])
+  @@index([locationId])
+}
+
+// New ClubSport model
+model ClubSport {
+  id            String       @id @default(uuid())
+  clubId        String
+  name          String
+  description   String?
+  icon          String?
+  color         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now())
+  
+  // Relations
+  club          Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  groups        ClubGroup[]
+  
+  @@unique([clubId, name])
+  @@index([clubId])
+}
+
+// Enhanced ClubGroup model
+model ClubGroup {
+  id            String       @id @default(uuid())
+  clubId        String
+  sportId       String
+  groupId       String
+  level         String?      // "beginner", "intermediate", "advanced", "professional"
+  ageGroup      String?      // "children", "youth", "adult", "senior", "all"
+  gender        String?      // "male", "female", "mixed"
+  isDefault     Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now())
+  
+  // Relations
+  club          Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  sport         ClubSport    @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  group         Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  @@index([clubId])
+  @@index([sportId])
+  @@index([groupId])
+  @@index([level, gender, ageGroup])
+}
+
+// Enhanced ClubRole model
+model ClubRole {
+  id              String       @id @default(uuid())
+  clubId          String
+  name            String
+  description     String?
+  color           String?
+  permissions     String[]
+  inheritToGroups Boolean      @default(false)
+  isDefault       Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @default(now())
+  
+  // Relations
+  club            Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  memberRoles     ClubMemberRole[]
+  
+  @@unique([clubId, name])
+  @@index([clubId])
+}
+
+// New ClubMemberRole junction model
+model ClubMemberRole {
+  id            String       @id @default(uuid())
+  clubId        String
+  userId        String
+  roleId        String
+  assignedBy    String
+  assignedAt    DateTime     @default(now())
+  
+  // Relations
+  club          Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          ClubRole     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedByUser User        @relation("ClubRoleAssignments", fields: [assignedBy], references: [id], onDelete: Cascade)
+  
+  // Unique constraint
+  @@unique([clubId, userId, roleId])
+  @@index([clubId, userId])
+  @@index([roleId])
+}
+
+// New model for tracking member statuses within groups
+model GroupMemberStatus {
+  id            String       @id @default(uuid())
+  groupId       String
+  userId        String
+  status        String       @default("active") // "active", "inactive", "pending", "banned"
+  joinedAt      DateTime?
+  invitedBy     String?
+  invitedAt     DateTime?
+  lastActive    DateTime?
+  isAnonymous   Boolean      @default(false)
+  
+  // Relations
+  group         Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([groupId, userId])
+  @@index([groupId, status])
+  @@index([userId])
+}
+
+// Feed Post model for quick posts across different entities
+model FeedPost {
+  id          String    @id @default(cuid())
+  title       String
+  content     String
+  imageUrl    String?   // Optional single image (can be null)
+  videoUrl    String?   // Optional embedded video (can be null)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  author      User      @relation(fields: [authorId], references: [id])
+  authorId    String
+  targets     FeedPostTarget[] // Where this post appears (multiple feeds)
+  replies     FeedPostReply[]
+  likes       FeedPostLike[]
+
+  // Indexes for better query performance
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+// FeedPostTarget model to track which feeds a post appears in
+model FeedPostTarget {
+  id          String    @id @default(cuid())
+  targetType  String    // "user", "group", "location", "event"
+  targetId    String    // ID of the target entity
+  createdAt   DateTime  @default(now())
+  
+  // Relationships
+  post        FeedPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId      String
+
+  // A post can only target a specific entity once
+  @@unique([postId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@index([postId])
+}
+
+// FeedPostReply model for comments on feed posts
+model FeedPostReply {
+  id          String    @id @default(cuid())
+  content     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  author      User      @relation(fields: [authorId], references: [id])
+  authorId    String
+  post        FeedPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId      String
+
+  // Indexes for better query performance
+  @@index([authorId])
+  @@index([postId])
+  @@index([createdAt])
+}
+
+// FeedPostLike model for tracking likes on feed posts
+model FeedPostLike {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+
+  // Relationships
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  post        FeedPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId      String
+
+  // A user can only like a post once
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
 }

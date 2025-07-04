@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import GroupsFilter from "./GroupsFilter";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Users, Search, MapPin, ChevronRight, PlusCircle } from "lucide-react";
+import { Users, Search, MapPin, ChevronRight, PlusCircle, Shield, Lock, Activity, Tag, Calendar, Trophy, Users2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Sport {
   value: string;
@@ -24,6 +25,14 @@ interface Group {
   sport: string;
   locationName: string | null;
   isPrivate: boolean;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  activityLevel?: string | null;
+  groupTags?: string[];
+  status?: string;
+  entryRules?: any;
+  settings?: any;
   _count: {
     members: number;
   };
@@ -37,6 +46,9 @@ interface GroupsClientWrapperProps {
   allSports: any[];
   totalGroupCount: number;
   userId?: string;
+  sportsClubs: Group[];
+  userGroups: Group[];
+  groupType: string;
 }
 
 export default function GroupsClientWrapper({
@@ -46,11 +58,15 @@ export default function GroupsClientWrapper({
   currentSport,
   allSports,
   totalGroupCount,
-  userId
+  userId,
+  sportsClubs,
+  userGroups,
+  groupType
 }: GroupsClientWrapperProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchInput, setSearchInput] = useState(searchParams.get("search") || "");
+  const [activeTab, setActiveTab] = useState(groupType || 'all');
   
   const sportParam = searchParams.get("sport");
   const sportsParam = searchParams.get("sports");
@@ -64,6 +80,19 @@ export default function GroupsClientWrapper({
       params.set("search", searchInput);
     } else {
       params.delete("search");
+    }
+    
+    router.push(`/groups?${params.toString()}`);
+  };
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    
+    const params = new URLSearchParams(searchParams.toString());
+    if (value !== 'all') {
+      params.set("type", value);
+    } else {
+      params.delete("type");
     }
     
     router.push(`/groups?${params.toString()}`);
@@ -92,6 +121,48 @@ export default function GroupsClientWrapper({
   
   const clearAllFilters = () => {
     router.push("/groups");
+  };
+
+  // Function to get activity level badge color
+  const getActivityLevelColor = (level: string | null | undefined) => {
+    switch (level) {
+      case 'high':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'medium':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'low':
+        return 'bg-green-100 text-green-800 border-green-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  // Function to get status badge color
+  const getStatusColor = (status: string | undefined) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'inactive':
+        return 'bg-gray-100 text-gray-700 border-gray-200';
+      case 'archived':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  // Get translated activity level
+  const getActivityLevelText = (level: string | null | undefined) => {
+    switch (level) {
+      case 'high':
+        return 'Hoch';
+      case 'medium':
+        return 'Mittel';
+      case 'low':
+        return 'Niedrig';
+      default:
+        return 'Nicht angegeben';
+    }
   };
   
   return (
@@ -199,6 +270,49 @@ export default function GroupsClientWrapper({
                   </form>
                 </div>
               
+                {/* Group type filter */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Gruppentyp</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Button 
+                        variant={activeTab === "all" ? "default" : "ghost"} 
+                        size="sm" 
+                        className="w-full justify-start text-sm font-normal"
+                        onClick={() => handleTabChange("all")}
+                      >
+                        <Users className="h-4 w-4 mr-2" />
+                        Alle Gruppen
+                        <Badge className="ml-auto">{groups.length}</Badge>
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Button 
+                        variant={activeTab === "clubs" ? "default" : "ghost"} 
+                        size="sm" 
+                        className="w-full justify-start text-sm font-normal"
+                        onClick={() => handleTabChange("clubs")}
+                      >
+                        <Trophy className="h-4 w-4 mr-2" />
+                        Sportvereine
+                        <Badge className="ml-auto">{sportsClubs.length}</Badge>
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Button 
+                        variant={activeTab === "groups" ? "default" : "ghost"} 
+                        size="sm" 
+                        className="w-full justify-start text-sm font-normal"
+                        onClick={() => handleTabChange("groups")}
+                      >
+                        <Users2 className="h-4 w-4 mr-2" />
+                        Hobbygruppen
+                        <Badge className="ml-auto">{userGroups.length}</Badge>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              
                 <GroupsFilter 
                   sports={sportCounts.map((item) => ({
                     value: item.sport,
@@ -248,205 +362,292 @@ export default function GroupsClientWrapper({
           <div className="flex-1">
             <div className="flex flex-wrap justify-between items-center mb-8 gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                  {sportParam 
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {searchParam
+                    ? `Suchergebnisse für "${searchParam}"`
+                    : sportParam
                     ? `${allSports.find(s => s.value === sportParam)?.label || sportParam} Gruppen` 
-                    : sportsParam 
-                      ? "Gefilterte Gruppen" 
-                      : searchParam
-                        ? `Suchergebnisse für "${searchParam}"`
-                        : "Alle Gruppen"
-                  }
-                </h1>
-                <div className="h-1 w-20 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full"></div>
-              </div>
-            </div>
-            
-            {/* Active filter display */}
-            {(sportsParam || sportParam || searchParam) && (
-              <div className="bg-indigo-50 rounded-xl p-4 mb-6">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-indigo-700 font-medium">Aktive Filter:</span>
-                  
+                    : activeTab === "clubs"
+                    ? "Sportvereine"
+                    : activeTab === "groups"
+                    ? "Hobbygruppen"
+                    : "Alle Gruppen"}
+                </h2>
+                
+                {/* Active filters */}
+                {(searchParam || sportParam || selectedSports.length > 0 || activeTab !== "all") && (
+                  <div className="mt-3 flex flex-wrap gap-2">
                   {searchParam && (
-                    <Badge variant="outline" className="bg-white border-indigo-200 text-indigo-700 gap-1 hover:bg-indigo-100">
-                      Suche: {searchParam}
-                      <button onClick={() => removeFilter("search")} className="pl-1 hover:text-indigo-900">
-                        ×
-                      </button>
+                      <Badge variant="outline" className="pl-2 pr-1.5 py-1.5 flex items-center gap-1.5 bg-white">
+                        <span>Suche: {searchParam}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-500 hover:text-gray-900 hover:bg-transparent"
+                          onClick={() => removeFilter("search")}
+                        >
+                          <span className="sr-only">Entfernen</span>
+                          <svg width="6" height="6" viewBox="0 0 6 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0.225 5.775C0.075 5.625 0 5.4375 0 5.25C0 5.0625 0.075 4.875 0.225 4.725L1.95 3L0.225 1.275C0.075 1.125 0 0.9375 0 0.75C0 0.5625 0.075 0.375 0.225 0.225C0.375 0.075 0.5625 0 0.75 0C0.9375 0 1.125 0.075 1.275 0.225L3 1.95L4.725 0.225C4.875 0.075 5.0625 0 5.25 0C5.4375 0 5.625 0.075 5.775 0.225C5.925 0.375 6 0.5625 6 0.75C6 0.9375 5.925 1.125 5.775 1.275L4.05 3L5.775 4.725C5.925 4.875 6 5.0625 6 5.25C6 5.4375 5.925 5.625 5.775 5.775C5.625 5.925 5.4375 6 5.25 6C5.0625 6 4.875 5.925 4.725 5.775L3 4.05L1.275 5.775C1.125 5.925 0.9375 6 0.75 6C0.5625 6 0.375 5.925 0.225 5.775Z" fill="currentColor"/>
+                          </svg>
+                        </Button>
                     </Badge>
                   )}
                   
                   {sportParam && (
-                    <Badge variant="outline" className="bg-white border-indigo-200 text-indigo-700 gap-1 hover:bg-indigo-100">
-                      {allSports.find(s => s.value === sportParam)?.label || sportParam}
-                      <button onClick={() => removeFilter("sport")} className="pl-1 hover:text-indigo-900">
-                        ×
-                      </button>
+                      <Badge variant="outline" className="pl-2 pr-1.5 py-1.5 flex items-center gap-1.5 bg-white">
+                        <span>Sportart: {allSports.find(s => s.value === sportParam)?.label || sportParam}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-500 hover:text-gray-900 hover:bg-transparent"
+                          onClick={() => removeFilter("sport")}
+                        >
+                          <span className="sr-only">Entfernen</span>
+                          <svg width="6" height="6" viewBox="0 0 6 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0.225 5.775C0.075 5.625 0 5.4375 0 5.25C0 5.0625 0.075 4.875 0.225 4.725L1.95 3L0.225 1.275C0.075 1.125 0 0.9375 0 0.75C0 0.5625 0.075 0.375 0.225 0.225C0.375 0.075 0.5625 0 0.75 0C0.9375 0 1.125 0.075 1.275 0.225L3 1.95L4.725 0.225C4.875 0.075 5.0625 0 5.25 0C5.4375 0 5.625 0.075 5.775 0.225C5.925 0.375 6 0.5625 6 0.75C6 0.9375 5.925 1.125 5.775 1.275L4.05 3L5.775 4.725C5.925 4.875 6 5.0625 6 5.25C6 5.4375 5.925 5.625 5.775 5.775C5.625 5.925 5.4375 6 5.25 6C5.0625 6 4.875 5.925 4.725 5.775L3 4.05L1.275 5.775C1.125 5.925 0.9375 6 0.75 6C0.5625 6 0.375 5.925 0.225 5.775Z" fill="currentColor"/>
+                          </svg>
+                        </Button>
                     </Badge>
                   )}
                   
-                  {sportsParam && sportsParam.split(',').map(sport => (
-                    <Badge key={sport} variant="outline" className="bg-white border-indigo-200 text-indigo-700 gap-1 hover:bg-indigo-100">
-                      {allSports.find(s => s.value === sport)?.label || sport}
-                      <button onClick={() => removeFilter("sports", sport)} className="pl-1 hover:text-indigo-900">
-                        ×
-                      </button>
+                    {selectedSports.map(sport => (
+                      <Badge key={sport} variant="outline" className="pl-2 pr-1.5 py-1.5 flex items-center gap-1.5 bg-white">
+                        <span>Sportart: {allSports.find(s => s.value === sport)?.label || sport}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-500 hover:text-gray-900 hover:bg-transparent"
+                          onClick={() => removeFilter("sports", sport)}
+                        >
+                          <span className="sr-only">Entfernen</span>
+                          <svg width="6" height="6" viewBox="0 0 6 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0.225 5.775C0.075 5.625 0 5.4375 0 5.25C0 5.0625 0.075 4.875 0.225 4.725L1.95 3L0.225 1.275C0.075 1.125 0 0.9375 0 0.75C0 0.5625 0.075 0.375 0.225 0.225C0.375 0.075 0.5625 0 0.75 0C0.9375 0 1.125 0.075 1.275 0.225L3 1.95L4.725 0.225C4.875 0.075 5.0625 0 5.25 0C5.4375 0 5.625 0.075 5.775 0.225C5.925 0.375 6 0.5625 6 0.75C6 0.9375 5.925 1.125 5.775 1.275L4.05 3L5.775 4.725C5.925 4.875 6 5.0625 6 5.25C6 5.4375 5.925 5.625 5.775 5.775C5.625 5.925 5.4375 6 5.25 6C5.0625 6 4.875 5.925 4.725 5.775L3 4.05L1.275 5.775C1.125 5.925 0.9375 6 0.75 6C0.5625 6 0.375 5.925 0.225 5.775Z" fill="currentColor"/>
+                          </svg>
+                        </Button>
                     </Badge>
                   ))}
                   
-                  <button 
-                    onClick={clearAllFilters}
-                    className="text-xs text-indigo-700 hover:underline ml-auto"
-                  >
-                    Alle Filter zurücksetzen
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {groups.length === 0 ? (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 text-indigo-500 mb-6">
-                  <Users className="w-8 h-8" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">Keine Gruppen gefunden</h3>
-                <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                  {searchParam
-                    ? `Es wurden keine Gruppen zu "${searchParam}" gefunden.`
-                    : sportParam
-                      ? `Es gibt noch keine Gruppen für ${allSports.find(s => s.value === sportParam)?.label || sportParam}.`
-                      : sportsParam
-                        ? "Es gibt keine Gruppen, die den ausgewählten Filtern entsprechen."
-                        : "Es gibt noch keine Gruppen."}
-                </p>
-                <div className="flex justify-center gap-4">
-                  <Button asChild variant="outline" className="px-6">
-                    <Link href="/groups">Alle anzeigen</Link>
+                    {/* Type filter badge */}
+                    {activeTab !== "all" && (
+                      <Badge variant="outline" className="pl-2 pr-1.5 py-1.5 flex items-center gap-1.5 bg-white">
+                        <span>Typ: {activeTab === "clubs" ? "Sportvereine" : "Hobbygruppen"}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-500 hover:text-gray-900 hover:bg-transparent"
+                          onClick={() => handleTabChange("all")}
+                        >
+                          <span className="sr-only">Entfernen</span>
+                          <svg width="6" height="6" viewBox="0 0 6 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0.225 5.775C0.075 5.625 0 5.4375 0 5.25C0 5.0625 0.075 4.875 0.225 4.725L1.95 3L0.225 1.275C0.075 1.125 0 0.9375 0 0.75C0 0.5625 0.075 0.375 0.225 0.225C0.375 0.075 0.5625 0 0.75 0C0.9375 0 1.125 0.075 1.275 0.225L3 1.95L4.725 0.225C4.875 0.075 5.0625 0 5.25 0C5.4375 0 5.625 0.075 5.775 0.225C5.925 0.375 6 0.5625 6 0.75C6 0.9375 5.925 1.125 5.775 1.275L4.05 3L5.775 4.725C5.925 4.875 6 5.0625 6 5.25C6 5.4375 5.925 5.625 5.775 5.775C5.625 5.925 5.4375 6 5.25 6C5.0625 6 4.875 5.925 4.725 5.775L3 4.05L1.275 5.775C1.125 5.925 0.9375 6 0.75 6C0.5625 6 0.375 5.925 0.225 5.775Z" fill="currentColor"/>
+                          </svg>
+                        </Button>
+                      </Badge>
+                    )}
+                    
+                    {(searchParam || sportParam || selectedSports.length > 0 || activeTab !== "all") && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={clearAllFilters}
+                      >
+                        Alle Filter löschen
                   </Button>
-                  <Button asChild className="px-6">
-                    <Link href="/groups/create">Gruppe erstellen</Link>
-                  </Button>
+                    )}
                 </div>
+                )}
               </div>
-            ) : (
-              <>
+            </div>
+            
+            {/* Display tabs for mobile view */}
+            <div className="mb-6 md:hidden">
+              <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+                <TabsList className="grid grid-cols-3 w-full">
+                  <TabsTrigger value="all">Alle</TabsTrigger>
+                  <TabsTrigger value="clubs">Vereine</TabsTrigger>
+                  <TabsTrigger value="groups">Gruppen</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            
+            {/* Groups Grid */}
+            {groups.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {groups.map((group: Group) => (
-                    <Card key={group.id} className="overflow-hidden hover:shadow-md transition-all duration-300 h-full flex flex-col group border-gray-100">
-                      <div className="h-48 bg-gray-100 relative overflow-hidden">
+                {groups.map((group) => {
+                  // Determine if this is a sports club or regular group
+                  const isSportsClub = sportsClubs.some(club => club.id === group.id);
+                  
+                  return (
+                    <Card 
+                      key={group.id} 
+                      className={`overflow-hidden transition-all duration-300 hover:shadow-md bg-white border ${
+                        isSportsClub ? 'border-indigo-200' : 'border-gray-100'
+                      } ${isSportsClub ? 'ring-1 ring-indigo-100' : ''}`}
+                    >
+                      <div className={`aspect-[4/3] relative overflow-hidden ${isSportsClub ? 'border-b border-indigo-100' : ''}`}>
                         {group.image ? (
                           <img
                             src={group.image}
                             alt={group.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 text-indigo-600">
-                            <span className="text-4xl font-bold opacity-40">{group.name.charAt(0)}</span>
+                          <div className={`w-full h-full ${
+                            isSportsClub 
+                              ? 'bg-gradient-to-br from-indigo-600 to-blue-700' 
+                              : 'bg-gradient-to-br from-indigo-500 to-blue-600'
+                          } flex items-center justify-center`}>
+                            <span className="text-white font-bold text-4xl">{group.name[0]}</span>
                           </div>
                         )}
-                        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent text-white">
-                          <div className="flex flex-wrap gap-2 mb-1">
-                            <Badge className="bg-indigo-500/90 hover:bg-indigo-600 border-none text-white">
-                              {allSports.find(s => s.value === group.sport)?.label || group.sport}
+                        {isSportsClub && (
+                          <div className="absolute top-3 left-3">
+                            <Badge className="bg-indigo-100 text-indigo-800 font-medium border-0">
+                              <Trophy className="h-3 w-3 mr-1" />
+                              Sportverein
                             </Badge>
-                            {group.isPrivate && (
-                              <Badge variant="outline" className="bg-white/20 backdrop-blur-sm text-white border-white/30">
-                                Private Gruppe
+                          </div>
+                        )}
+                        {group.isPrivate && (
+                          <div className="absolute top-3 right-3">
+                            <Badge variant="outline" className="bg-white/90 backdrop-blur-sm text-amber-700 font-medium border-amber-200">
+                              <Lock className="h-3 w-3 mr-1" />
+                              Privat
+                            </Badge>
+                          </div>
+                        )}
+                        {group.status && group.status !== 'active' && (
+                          <div className={`absolute ${!group.isPrivate ? 'top-3 right-3' : 'bottom-3 right-3'}`}>
+                            <Badge className={`${getStatusColor(group.status)} font-medium`}>
+                              {group.status === 'inactive' ? 'Inaktiv' : 'Archiviert'}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <CardContent className={`p-4 space-y-4 ${isSportsClub ? 'bg-indigo-50/30' : ''}`}>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          <Badge className={`${
+                            isSportsClub 
+                              ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200' 
+                              : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                          } border-0`}>
+                              {allSports.find(s => s.value === group.sport)?.label || group.sport}
+                          </Badge>
+                          
+                          {group.activityLevel && (
+                            <Badge variant="outline" className={`${getActivityLevelColor(group.activityLevel)}`}>
+                              <Activity className="h-3 w-3 mr-1" />
+                              {getActivityLevelText(group.activityLevel)}
+                            </Badge>
+                          )}
+                        </div>
+                        
+                        <h3 className={`font-semibold text-xl ${
+                          isSportsClub ? 'text-indigo-950' : 'text-gray-900'
+                        } leading-tight`}>
+                          <Link href={`/groups/${group.id}`} className={`${
+                            isSportsClub ? 'hover:text-indigo-700' : 'hover:text-indigo-600'
+                          } transition-colors`}>
+                            {group.name}
+                          </Link>
+                        </h3>
+                        
+                        <p className="text-gray-600 text-sm line-clamp-2">
+                          {group.description || "Keine Beschreibung vorhanden."}
+                        </p>
+                        
+                        {group.groupTags && group.groupTags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.groupTags.slice(0, 3).map((tag, index) => (
+                              <Badge key={index} variant="outline" className={`text-xs font-normal ${
+                                isSportsClub ? 'text-indigo-600 border-indigo-200' : 'text-gray-600 border-gray-200'
+                              }`}>
+                                <Tag className="h-2.5 w-2.5 mr-1" />
+                                {tag}
+                              </Badge>
+                            ))}
+                            {group.groupTags.length > 3 && (
+                              <Badge variant="outline" className={`text-xs font-normal ${
+                                isSportsClub ? 'text-indigo-600 border-indigo-200' : 'text-gray-600 border-gray-200'
+                              }`}>
+                                +{group.groupTags.length - 3} mehr
                               </Badge>
                             )}
                           </div>
-                          <h3 className="font-semibold line-clamp-1">{group.name}</h3>
-                        </div>
-                      </div>
-                      
-                      <CardContent className="py-4 flex-grow">
-                        <div className="flex items-center text-sm text-gray-500 mb-3">
-                          <Users className="h-4 w-4 mr-2 text-indigo-500" />
-                          <span>
-                            {group._count.members} {group._count.members === 1 ? "Mitglied" : "Mitglieder"}
-                          </span>
+                        )}
+                        
+                        <div className="flex items-center text-gray-500 text-sm">
+                          <Users className="h-3.5 w-3.5 mr-1.5" />
+                          <span>{group._count.members} {group._count.members === 1 ? "Mitglied" : "Mitglieder"}</span>
                         </div>
                         
                         {group.locationName && (
-                          <div className="flex items-center text-sm text-gray-500 mb-3">
-                            <MapPin className="h-4 w-4 mr-2 text-indigo-500" />
-                            <span className="line-clamp-1">{group.locationName}</span>
+                          <div className="flex items-center text-gray-500 text-sm">
+                            <MapPin className="h-3.5 w-3.5 mr-1.5" />
+                            <span className="truncate">{group.locationName || group.city}</span>
                           </div>
                         )}
                         
-                        {group.description && (
-                          <p className="text-gray-600 mt-4 line-clamp-2 text-sm">
-                            {group.description}
-                          </p>
+                        {group.entryRules && (
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {JSON.parse(typeof group.entryRules === 'string' ? group.entryRules : JSON.stringify(group.entryRules)).requireApproval && (
+                              <Badge variant="outline" className={`text-xs font-normal ${
+                                isSportsClub ? 'text-indigo-600 border-indigo-200' : 'text-gray-600 border-gray-200'
+                              }`}>
+                                <Shield className="h-2.5 w-2.5 mr-1" />
+                                Freigabe erforderlich
+                              </Badge>
+                            )}
+                            {JSON.parse(typeof group.entryRules === 'string' ? group.entryRules : JSON.stringify(group.entryRules)).inviteOnly && (
+                              <Badge variant="outline" className={`text-xs font-normal ${
+                                isSportsClub ? 'text-indigo-600 border-indigo-200' : 'text-gray-600 border-gray-200'
+                              }`}>
+                                <Lock className="h-2.5 w-2.5 mr-1" />
+                                Nur mit Einladung
+                              </Badge>
+                            )}
+                          </div>
                         )}
                       </CardContent>
                       
-                      <CardFooter className="pt-0 pb-4">
-                        <Button variant="outline" size="sm" className="w-full group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors duration-300" asChild>
-                          <Link href={`/groups/${group.id}`} className="flex items-center justify-center">
-                            Gruppe ansehen
-                            <ChevronRight className="ml-1 w-4 h-4" />
+                      <CardFooter className={`p-4 pt-0 flex justify-between items-center ${
+                        isSportsClub ? 'bg-indigo-50/30' : ''
+                      }`}>
+                        <div className="flex items-center text-gray-500 text-xs">
+                          <Calendar className="h-3 w-3 mr-1" />
+                          <span>Aktiv</span>
+                        </div>
+                        
+                        <Button 
+                          variant={isSportsClub ? "default" : "outline"}
+                          size="sm" 
+                          className={isSportsClub ? "rounded-full" : "rounded-full"} 
+                          asChild
+                        >
+                          <Link href={`/groups/${group.id}`}>
+                            <span className="mr-1">Details</span>
+                            <ChevronRight className="h-3.5 w-3.5" />
                           </Link>
                         </Button>
                       </CardFooter>
                     </Card>
-                  ))}
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-16 px-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div className="mx-auto w-16 h-16 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center mb-4">
+                  <Search className="h-8 w-8" />
                 </div>
-                
-                {/* Join Community Section */}
-                <div className="mt-16 bg-gradient-to-br from-gray-50 to-white rounded-xl p-8 shadow-sm border border-gray-100">
-                  <div className="max-w-3xl mx-auto text-center">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-4">Werde Teil unserer Sport-Community</h2>
-                    <p className="text-gray-600 mb-8">
-                      Entdecke Gleichgesinnte, organisiere gemeinsame Aktivitäten und teile deine Leidenschaft für Sport. 
-                      In unserer Community findet jeder seinen Platz – vom Anfänger bis zum Profi.
-                    </p>
-                    
-                    <div className="grid md:grid-cols-3 gap-6">
-                      <div className="bg-white p-5 rounded-lg shadow-sm">
-                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 mb-4">
-                          <Users className="h-6 w-6" />
-                        </div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Gruppen finden</h3>
-                        <p className="text-gray-500 text-sm mb-4">
-                          Entdecke Sportgruppen, die zu deinen Interessen und deinem Niveau passen.
-                        </p>
-                        <Link href="/groups" className="text-indigo-600 hover:underline text-sm font-medium">
-                          Jetzt entdecken →
-                        </Link>
-                      </div>
-                      
-                      <div className="bg-white p-5 rounded-lg shadow-sm">
-                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600 mb-4">
-                          <PlusCircle className="h-6 w-6" />
-                        </div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Gruppe gründen</h3>
-                        <p className="text-gray-500 text-sm mb-4">
-                          Starte deine eigene Sportgruppe und finde Mitglieder mit gleichen Interessen.
-                        </p>
-                        <Link href="/groups/create" className="text-blue-600 hover:underline text-sm font-medium">
-                          Gruppe erstellen →
-                        </Link>
-                      </div>
-                      
-                      <div className="bg-white p-5 rounded-lg shadow-sm">
-                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-50 text-green-600 mb-4">
-                          <MapPin className="h-6 w-6" />
-                        </div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Lokale Aktivitäten</h3>
-                        <p className="text-gray-500 text-sm mb-4">
-                          Entdecke Sportgruppen und Aktivitäten in deiner unmittelbaren Umgebung.
-                        </p>
-                        <Link href="/events" className="text-green-600 hover:underline text-sm font-medium">
-                          Veranstaltungen ansehen →
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Keine Gruppen gefunden</h3>
+                <p className="text-gray-600 mb-6">Es wurden keine Gruppen gefunden, die deinen Suchkriterien entsprechen.</p>
+                <Button onClick={clearAllFilters}>
+                  Alle Filter zurücksetzen
+                </Button>
                 </div>
-              </>
             )}
           </div>
         </div>

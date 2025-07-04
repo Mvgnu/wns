@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getSafeServerSession } from "@/lib/sessionHelper";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 

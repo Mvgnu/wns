@@ -128,7 +128,7 @@ function createLocationSchema(location, baseUrl) {
         ? {
             aggregateRating: {
                 '@type': 'AggregateRating',
-                ratingValue: location.rating || 0,
+                ratingValue: location.averageRating || 0,
                 reviewCount: location._count.reviews,
             },
         }

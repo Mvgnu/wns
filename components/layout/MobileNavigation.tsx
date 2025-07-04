@@ -17,7 +17,8 @@ import {
   Settings, 
   Bell, 
   LogOut,
-  CalendarDays
+  CalendarDays,
+  Newspaper
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -58,10 +59,11 @@ export default function MobileNavigation() {
 
   const mainNavItems = [
     { href: '/', label: 'Home', icon: Home },
+    { href: '/feed', label: 'Feed', icon: Newspaper },
     { href: '/search', label: 'Entdecken', icon: Search },
-    { href: '/events', label: 'Events', icon: Calendar },
     { href: '/groups', label: 'Gruppen', icon: Users },
     { href: '/locations', label: 'Locations', icon: Map },
+    { href: '/events', label: 'Events', icon: Calendar },
   ];
 
   const userNavItems = session ? [

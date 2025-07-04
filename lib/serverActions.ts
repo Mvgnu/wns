@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from './prisma';
+import prisma from './prisma';
 
 /**
  * Server actions for data fetching - use these in client components

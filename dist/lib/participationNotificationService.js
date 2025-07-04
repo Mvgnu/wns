@@ -1,8 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendParticipationQueryNotifications = sendParticipationQueryNotifications;
 exports.sendParticipationNotifications = sendParticipationNotifications;
-const prisma_1 = require("./prisma");
+const prisma_1 = __importDefault(require("./prisma"));
 const notificationService_1 = require("./notificationService");
 const emailService_1 = require("./emailService");
 /**
@@ -23,7 +26,7 @@ async function sendParticipationQueryNotifications(hoursBeforeEvent) {
         const lowerBound = new Date(targetTime.getTime() - bufferMinutes * 60 * 1000);
         const upperBound = new Date(targetTime.getTime() + bufferMinutes * 60 * 1000);
         // Find upcoming events that are exactly 48 or 24 hours away
-        const upcomingEvents = await prisma_1.prisma.event.findMany({
+        const upcomingEvents = await prisma_1.default.event.findMany({
             where: {
                 startTime: {
                     gte: lowerBound,
@@ -74,7 +77,7 @@ async function sendParticipationQueryNotifications(hoursBeforeEvent) {
                 // Only send notification if no response and not attending
                 if (!existingResponse && !isAttending) {
                     // Check if a reminder has already been sent for this event/user/hour combination
-                    const existingReminder = await prisma_1.prisma.eventReminder.findFirst({
+                    const existingReminder = await prisma_1.default.eventReminder.findFirst({
                         where: {
                             eventId: event.id,
                             userId: member.id,
@@ -84,7 +87,7 @@ async function sendParticipationQueryNotifications(hoursBeforeEvent) {
                     });
                     if (!existingReminder) {
                         // Create a reminder record
-                        await prisma_1.prisma.eventReminder.create({
+                        await prisma_1.default.eventReminder.create({
                             data: {
                                 eventId: event.id,
                                 userId: member.id,
@@ -112,7 +115,7 @@ async function sendParticipationQueryNotifications(hoursBeforeEvent) {
                             relatedId: event.id,
                             requiresAction: true,
                         };
-                        const notification = await prisma_1.prisma.notification.create({
+                        const notification = await prisma_1.default.notification.create({
                             data: notificationData,
                         });
                         // Send real-time notification
@@ -138,7 +141,7 @@ async function sendParticipationQueryNotifications(hoursBeforeEvent) {
 async function sendParticipationNotifications() {
     try {
         // Get all upcoming events that are part of groups
-        const events = await prisma_1.prisma.event.findMany({
+        const events = await prisma_1.default.event.findMany({
             where: {
                 startTime: {
                     gt: new Date(),

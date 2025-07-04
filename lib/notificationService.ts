@@ -35,7 +35,7 @@ export function sendNotificationToUser(userId: string, notification: any) {
   });
 }
 
-import { prisma } from "./prisma";
+import prisma from "./prisma";
 import { addDays, isBefore, startOfDay } from "date-fns";
 
 // Function to create and send event reminder notifications

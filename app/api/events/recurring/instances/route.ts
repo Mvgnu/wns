@@ -1,8 +1,7 @@
-export const dynamic = "force-static";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { addDays, eachDayOfInterval, format, isBefore, isSameDay, parseISO, startOfDay } from "date-fns";
 
 // Default and maximum limits for instance generation

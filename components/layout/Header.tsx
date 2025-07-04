@@ -16,7 +16,7 @@ import {
 import SearchBar from "./SearchBar";
 import NotificationsDropdown from "./NotificationsDropdown";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Home, Users, MapPin, Calendar, Settings, LogOut, User as UserIcon, Menu } from "lucide-react";
+import { Home, Users, MapPin, Calendar, Settings, LogOut, User as UserIcon, Menu, Newspaper } from "lucide-react";
 import { useState } from "react";
 
 const Header = () => {
@@ -27,6 +27,7 @@ const Header = () => {
 
   const navItems = [
     { name: "Startseite", href: "/", icon: Home },
+    { name: "Feed", href: "/feed", icon: Newspaper },
     { name: "Gruppen", href: "/groups", icon: Users },
     { name: "Orte", href: "/locations", icon: MapPin },
     { name: "Veranstaltungen", href: "/events", icon: Calendar },

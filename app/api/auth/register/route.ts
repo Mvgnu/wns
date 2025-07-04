@@ -1,78 +1,107 @@
 export const dynamic = "force-static";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import prisma, { checkPrismaConnection } from "@/lib/prisma";
+import { z } from "zod";
 
-// Use the singleton prisma instance from lib/prisma.ts
-// const prisma = new PrismaClient();
+// Define a strong validation schema for registration data
+const registerSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters").max(100),
+  email: z.string().email("Invalid email format"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+});
 
 // Helper to validate database schema before operations
 async function ensureRequiredFields() {
   try {
+    // First check if we can connect to the database
+    const connected = await checkPrismaConnection();
+    if (!connected) {
+      throw new Error("Cannot connect to database");
+    }
+    
     // Check if locationName exists in User table
-    const fieldsExist = await prisma.$queryRawUnsafe(`
+    const fieldsExist = await prisma.$queryRaw<Array<{ count: number }>>`
       SELECT COUNT(*) as count 
       FROM INFORMATION_SCHEMA.COLUMNS 
       WHERE TABLE_NAME = 'User' AND COLUMN_NAME = 'locationName'
-    `);
+    `;
     
     // If locationName doesn't exist, add it and other potentially missing fields
     if (fieldsExist[0].count === 0) {
       console.log('Required fields missing in User table, adding them...');
       
       // Add locationName if missing
-      await prisma.$executeRawUnsafe(`
+      await prisma.$executeRaw`
         ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "locationName" TEXT DEFAULT ''
-      `);
+      `;
       
       // Add sports array if missing
-      await prisma.$executeRawUnsafe(`
+      await prisma.$executeRaw`
         ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "sports" TEXT[] DEFAULT '{}'
-      `);
+      `;
       
       // Add interestTags array if missing
-      await prisma.$executeRawUnsafe(`
+      await prisma.$executeRaw`
         ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "interestTags" TEXT[] DEFAULT '{}'
-      `);
+      `;
       
       // Add latitude/longitude if missing
-      await prisma.$executeRawUnsafe(`
+      await prisma.$executeRaw`
         ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "latitude" DOUBLE PRECISION DEFAULT 0
-      `);
+      `;
       
-      await prisma.$executeRawUnsafe(`
+      await prisma.$executeRaw`
         ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "longitude" DOUBLE PRECISION DEFAULT 0
-      `);
+      `;
       
       console.log('Schema fixed, proceeding with registration...');
     }
   } catch (error) {
     console.error('Error checking/fixing schema:', error);
-    // Continue anyway, we'll let the main function handle any remaining issues
+    throw error; // Rethrow so we can handle it in the main function
   }
 }
 
 export async function POST(request: Request) {
   try {
-    // Ensure required fields exist in schema before proceeding
-    await ensureRequiredFields();
-    
+    // Parse and validate the request body
     const body = await request.json();
-    const { name, email, password } = body;
-
-    if (!name || !email || !password) {
+    
+    // Validate input with Zod schema
+    const validationResult = registerSchema.safeParse(body);
+    if (!validationResult.success) {
       return NextResponse.json(
-        { message: "Missing required fields" },
+        { 
+          message: "Validation failed", 
+          errors: validationResult.error.errors 
+        },
         { status: 400 }
       );
     }
-
-    // Use a more resilient query approach that won't fail if fields are missing
-    const existingUserRaw = await prisma.$queryRawUnsafe(`
-      SELECT "id", "email" FROM "User" WHERE "email" = $1 LIMIT 1
-    `, email);
     
-    const existingUser = existingUserRaw.length > 0 ? existingUserRaw[0] : null;
+    const { name, email, password } = validationResult.data;
+
+    // Ensure required fields exist in schema before proceeding
+    try {
+      await ensureRequiredFields();
+    } catch (schemaError) {
+      return NextResponse.json(
+        { message: "Database schema check failed", error: String(schemaError) },
+        { status: 500 }
+      );
+    }
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true }
+    });
 
     if (existingUser) {
       return NextResponse.json(
@@ -81,71 +110,53 @@ export async function POST(request: Request) {
       );
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash password with a strong work factor
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user with all necessary default values in a way that handles missing columns
-    try {
-      const user = await prisma.user.create({
-        data: {
-          name,
-          email,
-          password: hashedPassword,
-          latitude: 0,
-          longitude: 0,
-          locationName: "",
-          sports: [],
-          interestTags: [],
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          createdAt: true,
-          updatedAt: true,
-        }
-      });
-
-      return NextResponse.json(
-        {
-          message: "User registered successfully",
-          user: user,
-        },
-        { status: 201 }
-      );
-    } catch (createError) {
-      console.error("User creation error:", createError);
-      
-      // Fall back to raw SQL as a last resort if Prisma fails
-      const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      try {
-        await prisma.$executeRawUnsafe(`
-          INSERT INTO "User" ("id", "name", "email", "password", "createdAt", "updatedAt") 
-          VALUES ($1, $2, $3, $4, NOW(), NOW())
-        `, userId, name, email, hashedPassword);
-        
-        return NextResponse.json(
-          {
-            message: "User registered successfully (fallback method)",
-            user: {
-              id: userId,
-              name,
-              email,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          },
-          { status: 201 }
-        );
-      } catch (fallbackError) {
-        console.error("Fallback creation error:", fallbackError);
-        throw new Error("Could not create user using any method");
+    // Create user with secure defaults - excluding invalid 'settings' field
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        latitude: 0,
+        longitude: 0,
+        locationName: "",
+        sports: [],
+        interestTags: [],
+        // Default settings should be defined in the Prisma model or handled separately
+        // via a separate settings table or a valid field in the schema
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
       }
-    }
+    });
+
+    // Log successful registration (for audit)
+    console.log(`User registered successfully: ${user.id} (${user.email})`);
+
+    // Return success without exposing sensitive data
+    return NextResponse.json(
+      {
+        message: "User registered successfully",
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email
+        }
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Registration error:", error);
+    
+    // Generic error for security - don't expose detailed errors to client
     return NextResponse.json(
-      { message: "An error occurred during registration", details: String(error) },
+      { message: "Registration failed. Please try again later." },
       { status: 500 }
     );
   }

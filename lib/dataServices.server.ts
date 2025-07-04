@@ -1,7 +1,7 @@
 'use server';
 // Ensure this code is executed ONLY on the server
 
-import { prisma } from './prisma';
+import prisma from './prisma';
 import { getSportsByCategory, sportsCategories } from './sportsData';
 
 /**

@@ -9,7 +9,7 @@ exports.sendParticipationQueryEmail = sendParticipationQueryEmail;
 exports.sendWeeklyDigestEmail = sendWeeklyDigestEmail;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const googleapis_1 = require("googleapis");
-const prisma_1 = require("@/lib/prisma");
+const prisma_1 = __importDefault(require("@/lib/prisma"));
 const date_fns_1 = require("date-fns");
 // Configure OAuth2 client for Gmail
 const OAuth2 = googleapis_1.google.auth.OAuth2;
@@ -41,7 +41,7 @@ async function createTransporter() {
 // Log email notification
 async function logEmailNotification(userId, email, type, relatedId) {
     try {
-        await prisma_1.prisma.emailNotificationLog.create({
+        await prisma_1.default.emailNotificationLog.create({
             data: {
                 userId,
                 email,
@@ -59,7 +59,7 @@ async function logEmailNotification(userId, email, type, relatedId) {
 async function sendEventReminderEmail(user, event) {
     try {
         // Check if user has email notifications enabled
-        const preferences = await prisma_1.prisma.notificationPreferences.findUnique({
+        const preferences = await prisma_1.default.notificationPreferences.findUnique({
             where: { userId: user.id },
         });
         if (!(preferences === null || preferences === void 0 ? void 0 : preferences.emailNotifications) || !(preferences === null || preferences === void 0 ? void 0 : preferences.emailEventReminders)) {
@@ -107,7 +107,7 @@ async function sendEventReminderEmail(user, event) {
 async function sendGroupInviteEmail(invitedUser, group, invitedBy) {
     try {
         // Check if user has email notifications enabled
-        const preferences = await prisma_1.prisma.notificationPreferences.findUnique({
+        const preferences = await prisma_1.default.notificationPreferences.findUnique({
             where: { userId: invitedUser.id },
         });
         if (!(preferences === null || preferences === void 0 ? void 0 : preferences.emailNotifications) || !(preferences === null || preferences === void 0 ? void 0 : preferences.emailGroupInvites)) {
@@ -152,7 +152,7 @@ async function sendGroupInviteEmail(invitedUser, group, invitedBy) {
 async function sendParticipationQueryEmail(user, event) {
     try {
         // Check if user has email notifications enabled
-        const preferences = await prisma_1.prisma.notificationPreferences.findUnique({
+        const preferences = await prisma_1.default.notificationPreferences.findUnique({
             where: { userId: user.id },
         });
         if (!(preferences === null || preferences === void 0 ? void 0 : preferences.emailNotifications) || !(preferences === null || preferences === void 0 ? void 0 : preferences.participationQueries)) {
@@ -204,7 +204,7 @@ async function sendParticipationQueryEmail(user, event) {
 async function sendWeeklyDigestEmail(user, upcomingEvents, newGroups) {
     try {
         // Check if user has email notifications enabled
-        const preferences = await prisma_1.prisma.notificationPreferences.findUnique({
+        const preferences = await prisma_1.default.notificationPreferences.findUnique({
             where: { userId: user.id },
         });
         if (!(preferences === null || preferences === void 0 ? void 0 : preferences.emailNotifications) || !(preferences === null || preferences === void 0 ? void 0 : preferences.emailWeeklyDigest)) {

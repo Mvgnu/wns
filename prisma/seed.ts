@@ -1,839 +1,297 @@
-import { PrismaClient, Prisma } from '@prisma/client';
-import bcrypt from 'bcryptjs';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as util from 'util';
-import * as crypto from 'crypto';
-import { execSync } from 'child_process';
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcrypt';
 
+// Initialize PrismaClient
 const prisma = new PrismaClient();
 
-// Unsplash API credentials
-const UNSPLASH_ACCESS_KEY = 'd0EeF4h-pxmGEky32qBiTzZuEA3rTG7ly8AnDoH-INQ';
-
-// Ensure directories exist
-const UPLOADS_DIR = path.join(process.cwd(), '..', 'public', 'uploads');
-const IMAGES_DIR = path.join(UPLOADS_DIR, 'images');
-
-// Create directories if they don't exist
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-if (!fs.existsSync(IMAGES_DIR)) {
-  fs.mkdirSync(IMAGES_DIR, { recursive: true });
-}
-
-// Cache for downloaded images by category
-const imageCache: Record<string, string[]> = {};
-
-/**
- * Search Unsplash for images and download them to local filesystem
- * Returns an array of local image paths
- */
-function getImagesForCategory(category: string, count: number = 1): string[] {
-  // Check cache first
-  if (imageCache[category] && imageCache[category].length >= count) {
-    return imageCache[category].slice(0, count);
-  }
-
-  console.log(`Fetching ${count} images for ${category} from Unsplash...`);
-  
-  try {
-    // Search Unsplash for images using curl
-    const searchCommand = `curl -s "https://api.unsplash.com/search/photos?query=${encodeURIComponent(category)}&per_page=${count * 2}&client_id=${UNSPLASH_ACCESS_KEY}"`;
-    const searchResult = execSync(searchCommand).toString();
-    const searchData = JSON.parse(searchResult);
-    
-    if (!searchData.results || searchData.results.length === 0) {
-      console.warn(`No images found for ${category}, using placeholder`);
-      return createPlaceholderImages(category, count);
-    }
-    
-    // Download each image to local filesystem
-    const downloadedImages = [];
-    
-    for (let i = 0; i < Math.min(count, searchData.results.length); i++) {
-      const imageUrl = searchData.results[i].urls.regular;
-      const fileId = crypto.randomUUID();
-      const fileName = `${fileId}-${category.replace(/\s+/g, '-')}.jpg`;
-      const filePath = path.join(IMAGES_DIR, fileName);
-      
-      console.log(`Downloading image for ${category} to ${filePath}...`);
-      
-      try {
-        // Download image using curl
-        execSync(`curl -s "${imageUrl}" -o "${filePath}"`);
-        
-        // Check if file was created and has size
-        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
-          const relativePath = `/uploads/images/${fileName}`;
-          downloadedImages.push(relativePath);
-        } else {
-          console.warn(`Failed to download image for ${category}, file empty or not created`);
-        }
-      } catch (error) {
-        console.error(`Error downloading image for ${category}:`, error);
-      }
-    }
-    
-    // If we have images, cache them
-    if (downloadedImages.length > 0) {
-      imageCache[category] = downloadedImages;
-      return downloadedImages.slice(0, count);
-    }
-    
-    // Fall back to placeholders if downloads failed
-    return createPlaceholderImages(category, count);
-    
-  } catch (error) {
-    console.error(`Error in getImagesForCategory for ${category}:`, error);
-    return createPlaceholderImages(category, count);
-  }
-}
-
-/**
- * Create placeholder images for when Unsplash fails
- */
-function createPlaceholderImages(category: string, count: number = 1): string[] {
-  console.log(`Creating ${count} placeholder images for ${category}...`);
-  
-  const placeholders = [];
-  const placeholderDir = path.join(process.cwd(), '..', 'public', 'images', 'placeholders');
-  
-  // Create placeholder directory if it doesn't exist
-  if (!fs.existsSync(placeholderDir)) {
-    fs.mkdirSync(placeholderDir, { recursive: true });
-  }
-  
-  for (let i = 0; i < count; i++) {
-    const id = crypto.randomUUID().substring(0, 8);
-    const fileName = `${category.replace(/\s+/g, '-')}-${id}.jpg`;
-    const filePath = path.join(placeholderDir, fileName);
-    
-    // Generate a color based on the category for visual distinction
-    const hash = crypto.createHash('md5').update(category).digest('hex');
-    const color = hash.substring(0, 6);
-    
-    try {
-      // Download a placeholder colored rectangle
-      execSync(`curl -s "https://via.placeholder.com/800x600/${color}/FFFFFF?text=${encodeURIComponent(category)}" -o "${filePath}"`);
-      
-      // Check if file was created and has size
-      if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
-        placeholders.push(`/images/placeholders/${fileName}`);
-      }
-    } catch (error) {
-      console.error(`Error creating placeholder for ${category}:`, error);
-    }
-  }
-  
-  // If we couldn't create any placeholders, return a hard-coded path that will at least not break the database
-  if (placeholders.length === 0) {
-    return ['/images/default-placeholder.jpg'];
-  }
-  
-  return placeholders;
-}
-
-// Sports list for seed data
+// Sample sports categories
 const sportsCategories = [
-  { name: 'skating', displayName: 'Skateboarding', tags: ['urban', 'park', 'street'] },
-  { name: 'hiking', displayName: 'Hiking', tags: ['nature', 'mountains', 'trails'] },
-  { name: 'biking', displayName: 'Mountain Biking', tags: ['trails', 'downhill', 'cross-country'] },
-  { name: 'surfing', displayName: 'Surfing', tags: ['beach', 'waves', 'ocean'] },
-  { name: 'climbing', displayName: 'Rock Climbing', tags: ['bouldering', 'top-rope', 'sport'] },
-  { name: 'yoga', displayName: 'Yoga', tags: ['flexibility', 'mindfulness', 'strength'] },
-  { name: 'running', displayName: 'Running', tags: ['trail', 'road', 'track'] },
-  { name: 'kayaking', displayName: 'Kayaking', tags: ['river', 'lake', 'sea'] }
+  { name: 'basketball', displayName: 'Basketball', tags: ['team', 'court', 'ball'] },
+  { name: 'soccer', displayName: 'Soccer', tags: ['team', 'field', 'ball'] },
+  { name: 'tennis', displayName: 'Tennis', tags: ['racquet', 'court', 'individual'] },
+  { name: 'hiking', displayName: 'Hiking', tags: ['outdoors', 'trail', 'nature'] },
+  { name: 'climbing', displayName: 'Climbing', tags: ['strength', 'outdoors', 'adventure'] },
+  { name: 'swimming', displayName: 'Swimming', tags: ['water', 'endurance', 'technique'] },
+  { name: 'skating', displayName: 'Skating', tags: ['urban', 'balance', 'tricks'] },
+  { name: 'yoga', displayName: 'Yoga', tags: ['flexibility', 'mindfulness', 'balance'] },
+  { name: 'surfing', displayName: 'Surfing', tags: ['water', 'waves', 'balance'] },
+  { name: 'running', displayName: 'Running', tags: ['endurance', 'outdoors', 'cardio'] },
+  { name: 'biking', displayName: 'Biking', tags: ['cycling', 'outdoors', 'endurance'] },
 ];
 
-// City data with coordinates
+// Sample cities with coordinates
 const cities = [
-  { name: 'Berlin', country: 'Germany', state: 'Berlin', lat: 52.5200, lng: 13.4050 },
-  { name: 'Hamburg', country: 'Germany', state: 'Hamburg', lat: 53.5511, lng: 9.9937 },
-  { name: 'Munich', country: 'Germany', state: 'Bavaria', lat: 48.1351, lng: 11.5820 },
-  { name: 'Frankfurt', country: 'Germany', state: 'Hesse', lat: 50.1109, lng: 8.6821 },
-  { name: 'Cologne', country: 'Germany', state: 'North Rhine-Westphalia', lat: 50.9375, lng: 6.9603 },
+  { name: 'Berlin', state: 'Berlin', country: 'Germany', lat: 52.52, lng: 13.405 },
+  { name: 'Munich', state: 'Bavaria', country: 'Germany', lat: 48.137, lng: 11.576 },
+  { name: 'Hamburg', state: 'Hamburg', country: 'Germany', lat: 53.551, lng: 9.993 },
+  { name: 'Cologne', state: 'North Rhine-Westphalia', country: 'Germany', lat: 50.938, lng: 6.959 },
+  { name: 'Frankfurt', state: 'Hesse', country: 'Germany', lat: 50.11, lng: 8.682 },
 ];
 
+// Sample user images (could be replaced with actual URLs in production)
+const userImages = [
+  'https://i.pravatar.cc/300?img=1',
+  'https://i.pravatar.cc/300?img=2',
+  'https://i.pravatar.cc/300?img=3',
+  'https://i.pravatar.cc/300?img=4',
+  'https://i.pravatar.cc/300?img=5',
+  'https://i.pravatar.cc/300?img=6',
+  'https://i.pravatar.cc/300?img=7',
+  'https://i.pravatar.cc/300?img=8',
+  'https://i.pravatar.cc/300?img=9',
+  'https://i.pravatar.cc/300?img=10',
+];
+
+// Sample group images
+const groupImages = [
+  'https://source.unsplash.com/random/800x600/?sports,group',
+  'https://source.unsplash.com/random/800x600/?team,sports',
+  'https://source.unsplash.com/random/800x600/?outdoor,activity',
+  'https://source.unsplash.com/random/800x600/?fitness,club',
+  'https://source.unsplash.com/random/800x600/?athletics,team',
+];
+
+// Sample event images
+const eventImages = [
+  'https://source.unsplash.com/random/800x600/?sports,event',
+  'https://source.unsplash.com/random/800x600/?tournament,sports',
+  'https://source.unsplash.com/random/800x600/?competition,sports',
+  'https://source.unsplash.com/random/800x600/?match,sports',
+  'https://source.unsplash.com/random/800x600/?game,sports',
+];
+
+// Group keywords for naming
+const groupKeywords = ['Club', 'Team', 'Community', 'Enthusiasts', 'Association'];
+
+// Event types for naming
+const eventTypes = ['Tournament', 'Meetup', 'Practice', 'Workshop', 'Competition'];
+
+// Privacy settings for groups
+const groupPrivacySettings = ['public', 'private', 'hidden'];
+
+// Privacy settings for events
+const eventPrivacySettings = ['public', 'private', 'members'];
+
+// Main seeding function
 async function main() {
-  console.log('Starting enhanced seed process...');
+  console.log(`Start seeding ...`);
 
-  // Clean up existing data
-  await prisma.notificationPreferences.deleteMany();
-  await prisma.notification.deleteMany();
-  await prisma.like.deleteMany();
-  await prisma.comment.deleteMany();
-  await prisma.post.deleteMany();
-  await prisma.locationReview.deleteMany();
-  await prisma.participationResponse.deleteMany();
-  await prisma.eventReminder.deleteMany();
-  await prisma.event.deleteMany();
-  await prisma.groupAdmin.deleteMany();
-  await prisma.groupInvite.deleteMany();
-  await prisma.group.deleteMany();
-  await prisma.location.deleteMany();
-  await prisma.user.deleteMany();
-
-  console.log('Cleaned up existing data');
+  // Create users
+  const passwordHash = await bcrypt.hash("password123", 10);
   
-  // Create users with more detailed info
-  const hashedPassword = await bcrypt.hash('password123', 10);
-  
+  // Create system admin
   const admin = await prisma.user.create({
     data: {
-      name: 'Admin User',
-      email: 'admin@example.com',
-      password: hashedPassword,
-      sports: ['skating', 'hiking', 'biking'],
-      bio: 'Site administrator and enthusiast of various hobby sports. Always looking for new sports to try!',
-      image: 'https://i.pravatar.cc/300?u=admin',
-      latitude: 52.5200,
-      longitude: 13.4050,
-      locationName: 'Mitte',
-      city: 'Berlin',
-      state: 'Berlin',
-      country: 'Germany',
-      zipCode: '10115',
-      interestTags: ['outdoors', 'adventure', 'community'],
-      preferredRadius: 25,
-      activityLevel: 'high',
-      notificationPreferences: {
-        create: {
-          emailNotifications: true,
-          pushNotifications: true,
-          eventReminders: true,
-          participationQueries: true,
-          emailEventInvites: true,
-          emailEventReminders: true,
-          emailGroupInvites: true,
-          emailDirectMessages: true,
-          emailWeeklyDigest: true,
-          pushNewPosts: true,
-          pushEventUpdates: true,
-          pushLocationAlerts: true,
-        }
-      }
+      name: "System Admin",
+      email: "admin@example.com",
+      password: passwordHash,
+      image: userImages[0],
+      emailVerified: new Date(),
     },
   });
+  console.log(`Created admin user with id: ${admin.id}`);
 
-  // Create 10 regular users
-  const users = [admin];
-  
-  for (let i = 0; i < 10; i++) {
-    const city = cities[Math.floor(Math.random() * cities.length)];
-    const userSports = sportsCategories
-      .sort(() => 0.5 - Math.random())
-      .slice(0, Math.floor(Math.random() * 3) + 1)
-      .map(s => s.name);
-    
+  // Create regular users
+  const users = [];
+  for (let i = 0; i < 20; i++) {
+    const username = `user${i + 1}`;
     const user = await prisma.user.create({
       data: {
         name: `User ${i + 1}`,
-        email: `user${i + 1}@example.com`,
-        password: hashedPassword,
-        sports: userSports,
-        bio: `I'm a ${userSports.join(' and ')} enthusiast looking to connect with like-minded people.`,
-        image: `https://i.pravatar.cc/300?u=user${i + 1}`,
-        latitude: city.lat + (Math.random() - 0.5) * 0.1,
-        longitude: city.lng + (Math.random() - 0.5) * 0.1,
-        locationName: city.name,
-        city: city.name,
-        state: city.state,
-        country: city.country,
-        zipCode: `${Math.floor(10000 + Math.random() * 90000)}`,
-        interestTags: userSports.concat(['outdoors', 'adventure', 'community'].sort(() => 0.5 - Math.random()).slice(0, 2)),
-        preferredRadius: Math.floor(Math.random() * 30) + 10,
-        activityLevel: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)],
-        notificationPreferences: {
-          create: {
-            emailNotifications: Math.random() > 0.2,
-            pushNotifications: Math.random() > 0.2,
-            eventReminders: Math.random() > 0.2,
-            participationQueries: Math.random() > 0.2,
-            reminderHoursBeforeEvent: [12, 24, 48][Math.floor(Math.random() * 3)],
-            emailEventInvites: Math.random() > 0.3,
-            emailEventReminders: Math.random() > 0.3,
-            emailGroupInvites: Math.random() > 0.3,
-            emailDirectMessages: Math.random() > 0.3,
-            emailWeeklyDigest: Math.random() > 0.7,
-            pushNewPosts: Math.random() > 0.3,
-            pushEventUpdates: Math.random() > 0.3,
-            pushLocationAlerts: Math.random() > 0.3,
-          }
-        }
+        email: `${username}@example.com`,
+        password: passwordHash,
+        image: userImages[i % userImages.length],
+        emailVerified: new Date(),
+        latitude: cities[i % cities.length].lat + (Math.random() - 0.5) * 0.1,
+        longitude: cities[i % cities.length].lng + (Math.random() - 0.5) * 0.1,
+        sports: [sportsCategories[i % sportsCategories.length].name],
       },
     });
-    
     users.push(user);
+    console.log(`Created user ${i + 1} with id: ${user.id}`);
   }
 
-  console.log(`Created ${users.length} users`);
-
-  // Create groups for each sport category
+  // Create groups
   const groups = [];
-  
   for (const sport of sportsCategories) {
-    // Get users interested in this sport
-    const interestedUsers = users.filter(user => user.sports.includes(sport.name));
-    if (interestedUsers.length < 2) continue;
+    const groupsPerSport = Math.min(3, Math.floor(Math.random() * 4) + 1); // 1-3 groups per sport
     
-    // Select random owner and members
-    const owner = interestedUsers[Math.floor(Math.random() * interestedUsers.length)];
-    const members = interestedUsers.filter(u => u.id !== owner.id).slice(0, Math.floor(Math.random() * interestedUsers.length));
-    
-    // Select a random city
-    const city = cities[Math.floor(Math.random() * cities.length)];
-    
-    // Fetch image from Unsplash
-    const imageUrls = getImagesForCategory(`${sport.name} sport`, 1);
-    const imageUrl = imageUrls[0];
-    
-    // Create group
-    const group = await prisma.group.create({
-      data: {
-        name: `${city.name} ${sport.displayName} Club`,
-        description: `A community for ${sport.displayName.toLowerCase()} enthusiasts in ${city.name}. All skill levels welcome!`,
-        sport: sport.name,
-        location: `${city.name}, ${city.country}`,
-        image: imageUrl,
-        latitude: city.lat,
-        longitude: city.lng,
-        locationName: city.name,
-        city: city.name,
-        state: city.state,
-        country: city.country,
-        zipCode: `${Math.floor(10000 + Math.random() * 90000)}`,
-        groupTags: [sport.name, ...sport.tags],
-        activityLevel: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)],
-        isPrivate: Math.random() > 0.7,
-        inviteCode: Math.random() > 0.5 ? crypto.randomBytes(3).toString('hex') : null,
-        owner: {
-          connect: { id: owner.id },
-        },
-        members: {
-          connect: members.map(m => ({ id: m.id })),
-        },
-      },
-    });
-    
-    // Create group admins
-    if (members.length > 0) {
-      const adminCount = Math.min(2, members.length);
-      const groupAdmins = members.slice(0, adminCount);
+    for (let i = 0; i < groupsPerSport; i++) {
+      const cityIndex = Math.floor(Math.random() * cities.length);
+      const city = cities[cityIndex];
+      const privacy = groupPrivacySettings[Math.floor(Math.random() * groupPrivacySettings.length)];
+      const createdBy = users[Math.floor(Math.random() * users.length)];
       
-      for (const admin of groupAdmins) {
-        await prisma.groupAdmin.create({
-          data: {
-            group: { connect: { id: group.id } },
-            user: { connect: { id: admin.id } },
-          }
-        });
-      }
-    }
-    
-    groups.push(group);
-  }
-
-  console.log(`Created ${groups.length} groups`);
-
-  // Create locations for each sport
-  const locations = [];
-  
-  for (const sport of sportsCategories) {
-    // Number of locations to create for this sport
-    const locationCount = Math.floor(Math.random() * 3) + 1;
-    
-    for (let i = 0; i < locationCount; i++) {
-      // Select a random city
-      const city = cities[Math.floor(Math.random() * cities.length)];
-      
-      // Get users interested in this sport
-      const interestedUsers = users.filter(user => user.sports.includes(sport.name));
-      if (interestedUsers.length === 0) continue;
-      
-      // Select random user to add the location
-      const addedBy = interestedUsers[Math.floor(Math.random() * interestedUsers.length)];
-      
-      // Fetch image from Unsplash
-      const imageUrls = getImagesForCategory(`${sport.name} location`, 1);
-      const imageUrl = imageUrls[0];
-      
-      // Determine location type
-      let locationType = 'spot';
-      if (sport.name === 'hiking' || sport.name === 'running' || sport.name === 'biking') {
-        locationType = 'trail';
-      } else if (sport.name === 'surfing' || sport.name === 'kayaking') {
-        locationType = 'water';
-      } else if (sport.name === 'climbing') {
-        locationType = 'crag';
-      } else if (sport.name === 'skating') {
-        locationType = 'skatepark';
-      } else if (sport.name === 'yoga') {
-        locationType = 'studio';
-      }
-      
-      // Create coordinates for line-based locations
-      const trailCoordinates = locationType === 'trail' ? [
-        { lat: city.lat + (Math.random() - 0.5) * 0.02, lng: city.lng + (Math.random() - 0.5) * 0.02 },
-        { lat: city.lat + (Math.random() - 0.5) * 0.02, lng: city.lng + (Math.random() - 0.5) * 0.02 },
-        { lat: city.lat + (Math.random() - 0.5) * 0.02, lng: city.lng + (Math.random() - 0.5) * 0.02 },
-      ] : undefined;
-      
-      // Create location
-      const location = await prisma.location.create({
+      const group = await prisma.group.create({
         data: {
-          name: `${city.name} ${sport.displayName} ${locationType.charAt(0).toUpperCase() + locationType.slice(1)}`,
-          description: `A popular ${locationType} for ${sport.displayName.toLowerCase()} in ${city.name}.`,
-          type: locationType,
+          name: `${city.name} ${sport.displayName} ${groupKeywords[i % groupKeywords.length]}`,
+          description: `A group for ${sport.displayName.toLowerCase()} enthusiasts in ${city.name}.`,
           sport: sport.name,
-          sports: [sport.name],
+          tags: sport.tags.slice(0, 2),
+          privacy,
+          image: groupImages[Math.floor(Math.random() * groupImages.length)],
+          createdById: createdBy.id,
           latitude: city.lat + (Math.random() - 0.5) * 0.05,
           longitude: city.lng + (Math.random() - 0.5) * 0.05,
-          address: `Sample Address, ${city.name}, ${city.country}`,
-          images: [imageUrl],
-          isLineBased: locationType === 'trail',
-          coordinates: locationType === 'trail' ? (trailCoordinates as any) : undefined,
-          addedBy: {
-            connect: { id: addedBy.id },
-          },
+          address: `${city.name}, ${city.country}`,
+          memberCount: 1,
         },
       });
       
-      // Add reviews
-      const reviewerCount = Math.floor(Math.random() * 3) + 1;
-      const reviewers = interestedUsers.filter(u => u.id !== addedBy.id).slice(0, reviewerCount);
+      groups.push(group);
+      console.log(`Created group: ${group.name}`);
       
-      for (const reviewer of reviewers) {
-        await prisma.locationReview.create({
+      // Add creator as admin
+      await prisma.groupMember.create({
+        data: {
+          userId: createdBy.id,
+          groupId: group.id,
+          role: "admin",
+        },
+      });
+      
+      // Add some members
+      const memberCount = Math.floor(Math.random() * 10) + 5; // 5-15 members
+      const potentialMembers = users.filter(u => u.id !== createdBy.id);
+      const selectedMembers = potentialMembers
+        .sort(() => 0.5 - Math.random())
+        .slice(0, memberCount);
+      
+      for (const member of selectedMembers) {
+        const isModerator = Math.random() > 0.8; // 20% chance of being a moderator
+        
+        await prisma.groupMember.create({
           data: {
-            rating: Math.floor(Math.random() * 5) / 2 + 2.5, // Rating between 2.5 and 5.0
-            comment: `${Math.random() > 0.5 ? 'Great' : 'Excellent'} ${locationType} for ${sport.name}. ${Math.random() > 0.5 ? 'Highly recommended!' : 'I come here regularly.'}`,
-            location: {
-              connect: { id: location.id },
-            },
-            user: {
-              connect: { id: reviewer.id },
-            },
+            userId: member.id,
+            groupId: group.id,
+            role: isModerator ? "moderator" : "member",
           },
         });
       }
       
-      locations.push(location);
+      console.log(`Added ${memberCount} members to group: ${group.name}`);
     }
   }
-
-  console.log(`Created ${locations.length} locations`);
 
   // Create events
+  const totalEvents = 50; 
   const events = [];
-  const currentDate = new Date();
   
-  // Create past events
-  for (let i = 0; i < 5; i++) {
-    const pastDate = new Date(currentDate);
-    pastDate.setDate(currentDate.getDate() - (Math.floor(Math.random() * 30) + 1)); // 1-30 days ago
+  for (let i = 0; i < totalEvents; i++) {
+    const isGroupEvent = Math.random() > 0.3; 
+    const group = isGroupEvent ? groups[Math.floor(Math.random() * groups.length)] : null;
+    const sport = isGroupEvent 
+      ? sportsCategories.find(s => s.name === group.sport)
+      : sportsCategories[Math.floor(Math.random() * sportsCategories.length)];
     
-    // Select a random group
-    const group = groups[Math.floor(Math.random() * groups.length)];
-    if (!group) continue;
+    const creator = users[Math.floor(Math.random() * users.length)];
+    const city = cities[Math.floor(Math.random() * cities.length)];
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() + Math.floor(Math.random() * 30)); // Event in next 30 days
+    startDate.setHours(8 + Math.floor(Math.random() * 12), Math.floor(Math.random() * 4) * 15, 0); // Between 8am and 8pm
     
-    // Find matching location for the sport
-    const matchingLocations = locations.filter(l => l.sports.includes(group.sport));
-    if (matchingLocations.length === 0) continue;
-    const location = matchingLocations[Math.floor(Math.random() * matchingLocations.length)];
+    const endDate = new Date(startDate);
+    endDate.setHours(endDate.getHours() + 1 + Math.floor(Math.random() * 3)); // 1-3 hours duration
     
-    // Select organizer from group members
-    const organizer = await prisma.user.findFirst({
-      where: { id: group.ownerId },
-    });
-    if (!organizer) continue;
+    const privacy = eventPrivacySettings[Math.floor(Math.random() * eventPrivacySettings.length)];
+    const capacity = 5 + Math.floor(Math.random() * 20); // 5-25 participants
     
-    // Select attendees from group members
-    const groupMembers = await prisma.user.findMany({
-      where: {
-        OR: [
-          { memberGroups: { some: { id: group.id } } },
-          { id: group.ownerId }
-        ]
-      },
-    });
+    const isRecurring = Math.random() > 0.7; // 30% chance of being recurring
+    let recurrenceRule = null;
     
-    // Make sure we have at least one attendee (the organizer)
-    const attendeeIds = [organizer.id];
-    
-    // Add more random attendees
-    if (groupMembers.length > 1) {
-      const additionalAttendees = groupMembers
-        .filter(m => m.id !== organizer.id)
-        .slice(0, Math.floor(Math.random() * (groupMembers.length - 1)));
+    if (isRecurring) {
+      const frequencies = ['daily', 'weekly', 'monthly'];
+      const frequency = frequencies[Math.floor(Math.random() * frequencies.length)];
+      const interval = Math.floor(Math.random() * 2) + 1; // 1-2
       
-      attendeeIds.push(...additionalAttendees.map(a => a.id));
+      recurrenceRule = {
+        frequency,
+        interval,
+        count: Math.floor(Math.random() * 10) + 5, // 5-15 occurrences
+      };
+      
+      if (frequency === 'weekly') {
+        recurrenceRule.byWeekday = ['MO', 'WE', 'FR'][Math.floor(Math.random() * 3)];
+      }
     }
     
-    // Create event with guaranteed attendees
     const event = await prisma.event.create({
       data: {
-        title: `Past ${group.sport} Event at ${location.name}`,
-        description: `Join us for a ${group.sport} session at ${location.name}. All skill levels welcome!`,
-        startTime: pastDate,
-        endTime: new Date(pastDate.getTime() + (Math.floor(Math.random() * 3) + 1) * 60 * 60 * 1000), // 1-3 hours later
-        image: location.images[0],
-        organizer: {
-          connect: { id: organizer.id },
-        },
-        group: {
-          connect: { id: group.id },
-        },
-        location: {
-          connect: { id: location.id },
-        },
-        attendees: {
-          connect: attendeeIds.map(id => ({ id })),
-        },
-      },
-      include: {
-        attendees: true,
-      },
-    });
-    
-    events.push(event);
-  }
-  
-  // Create upcoming events
-  for (let i = 0; i < 10; i++) {
-    const futureDate = new Date(currentDate);
-    futureDate.setDate(currentDate.getDate() + (Math.floor(Math.random() * 30) + 1)); // 1-30 days in future
-    
-    // Select a random group
-    const group = groups[Math.floor(Math.random() * groups.length)];
-    if (!group) continue;
-    
-    // Find matching location for the sport
-    const matchingLocations = locations.filter(l => l.sports.includes(group.sport));
-    if (matchingLocations.length === 0) continue;
-    const location = matchingLocations[Math.floor(Math.random() * matchingLocations.length)];
-    
-    // Select organizer from group members
-    const organizer = await prisma.user.findFirst({
-      where: { id: group.ownerId },
-    });
-    if (!organizer) continue;
-    
-    // Select attendees from group members
-    const groupMembers = await prisma.user.findMany({
-      where: {
-        OR: [
-          { memberGroups: { some: { id: group.id } } },
-          { id: group.ownerId }
-        ]
-      },
-    });
-    
-    // Make sure we have at least one attendee (the organizer)
-    const attendeeIds = [organizer.id];
-    
-    // Add more random attendees
-    if (groupMembers.length > 1) {
-      const additionalAttendees = groupMembers
-        .filter(m => m.id !== organizer.id)
-        .slice(0, Math.floor(Math.random() * (groupMembers.length - 1)));
-      
-      attendeeIds.push(...additionalAttendees.map(a => a.id));
-    }
-    
-    // Decide if this is a recurring event
-    const isRecurring = Math.random() > 0.7;
-    
-    // Create event with guaranteed attendees
-    const event = await prisma.event.create({
-      data: {
-        title: `${isRecurring ? 'Weekly ' : ''}${group.sport.charAt(0).toUpperCase() + group.sport.slice(1)} ${Math.random() > 0.5 ? 'Session' : 'Meetup'} at ${location.name}`,
-        description: `Join us for a ${group.sport} session at ${location.name}. All skill levels welcome!`,
-        startTime: futureDate,
-        endTime: new Date(futureDate.getTime() + (Math.floor(Math.random() * 3) + 1) * 60 * 60 * 1000), // 1-3 hours later
-        image: location.images[0],
+        title: `${sport.displayName} ${eventTypes[Math.floor(Math.random() * eventTypes.length)]}`,
+        description: `Join us for ${sport.displayName.toLowerCase()} in ${city.name}. All skill levels welcome!`,
+        sport: sport.name,
+        tags: sport.tags.slice(0, 2),
+        startDate,
+        endDate,
+        latitude: city.lat + (Math.random() - 0.5) * 0.05,
+        longitude: city.lng + (Math.random() - 0.5) * 0.05,
+        address: `${Math.floor(Math.random() * 100) + 1} Sample St., ${city.name}`,
+        images: [eventImages[Math.floor(Math.random() * eventImages.length)]],
+        privacy,
+        capacity,
+        createdById: creator.id,
+        groupId: isGroupEvent ? group.id : null,
         isRecurring,
-        recurringPattern: isRecurring ? 'weekly' : null,
-        recurringDays: isRecurring ? [futureDate.getDay()] : [],
-        recurringEndDate: isRecurring ? new Date(futureDate.getTime() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days from start
-        organizer: {
-          connect: { id: organizer.id },
-        },
-        group: {
-          connect: { id: group.id },
-        },
-        location: {
-          connect: { id: location.id },
-        },
-        attendees: {
-          connect: attendeeIds.map(id => ({ id })),
-        },
-      },
-      include: {
-        attendees: true,
+        recurrenceRule: isRecurring ? recurrenceRule : null,
       },
     });
-    
-    // Create participation responses for some non-attending members
-    const nonAttendees = groupMembers.filter(m => !attendeeIds.includes(m.id));
-    
-    for (const member of nonAttendees) {
-      if (Math.random() > 0.5) {
-        await prisma.participationResponse.create({
-          data: {
-            response: ['no', 'maybe'][Math.floor(Math.random() * 2)],
-            event: { connect: { id: event.id } },
-            user: { connect: { id: member.id } },
-          }
-        });
-      }
-    }
-    
-    // Create event reminders for some attendees
-    for (const attendeeId of attendeeIds) {
-      if (Math.random() > 0.7) {
-        await prisma.eventReminder.create({
-          data: {
-            reminderType: 'attendance_reminder',
-            hoursBeforeEvent: [12, 24][Math.floor(Math.random() * 2)],
-            sentAt: Math.random() > 0.5 ? new Date() : null,
-            event: { connect: { id: event.id } },
-            user: { connect: { id: attendeeId } },
-          }
-        });
-      }
-    }
     
     events.push(event);
-  }
-
-  console.log(`Created ${events.length} events`);
-
-  // Create posts
-  const posts = [];
-  
-  for (const group of groups) {
-    // Number of posts to create for this group
-    const postCount = Math.floor(Math.random() * 5) + 1;
+    console.log(`Created event: ${event.title}`);
     
-    for (let i = 0; i < postCount; i++) {
-      // Select a random group member as author
-      const groupMembers = await prisma.user.findMany({
-        where: {
-          OR: [
-            { memberGroups: { some: { id: group.id } } },
-            { id: group.ownerId }
-          ]
-        },
-      });
-      
-      if (groupMembers.length === 0) continue;
-      const author = groupMembers[Math.floor(Math.random() * groupMembers.length)];
-      
-      // Fetch image from Unsplash
-      const imageUrls = getImagesForCategory(group.sport, 1);
-      const imageUrl = imageUrls[0];
-      
-      // Create post
-      const post = await prisma.post.create({
-        data: {
-          title: [
-            `${group.sport.charAt(0).toUpperCase() + group.sport.slice(1)} Tips for Beginners`,
-            `My Recent ${group.sport.charAt(0).toUpperCase() + group.sport.slice(1)} Experience`,
-            `Best Places for ${group.sport.charAt(0).toUpperCase() + group.sport.slice(1)} in ${group.city}`,
-            `Looking for ${group.sport.charAt(0).toUpperCase() + group.sport.slice(1)} Partners`,
-            `${group.sport.charAt(0).toUpperCase() + group.sport.slice(1)} Equipment Recommendations`
-          ][Math.floor(Math.random() * 5)],
-          content: `This is a sample post about ${group.sport}. It includes information, tips, and questions for the community.`,
-          images: [imageUrl],
-          videos: [],
-          author: {
-            connect: { id: author.id },
-          },
-          group: {
-            connect: { id: group.id },
-          },
-        },
-      });
-      
-      // Create comments
-      const commentCount = Math.floor(Math.random() * 5);
-      const commenters = groupMembers.filter(m => m.id !== author.id);
-      
-      for (let j = 0; j < commentCount && j < commenters.length; j++) {
-        const commenter = commenters[j];
-        
-        const comment = await prisma.comment.create({
-          data: {
-            content: [
-              `Great post! I've been practicing ${group.sport} for a while and your tips are spot on.`,
-              `Thanks for sharing! I'm looking forward to trying these techniques.`,
-              `I also recommend checking out ${locations.find(l => l.sports.includes(group.sport))?.name || 'local spots'} for ${group.sport}.`,
-              `Has anyone tried the new ${group.sport} equipment mentioned in the post?`,
-              `I'm new to ${group.sport}. Would anyone be willing to give some beginner advice?`
-            ][Math.floor(Math.random() * 5)],
-            author: {
-              connect: { id: commenter.id },
-            },
-            post: {
-              connect: { id: post.id },
-            },
-          },
-        });
-        
-        // Add reply to some comments
-        if (Math.random() > 0.7) {
-          await prisma.comment.create({
-            data: {
-              content: `Thanks for your comment! I'm glad you found it helpful.`,
-              author: {
-                connect: { id: author.id },
-              },
-              post: {
-                connect: { id: post.id },
-              },
-              parent: {
-                connect: { id: comment.id },
-              },
-            },
-          });
-        }
-      }
-      
-      // Add likes
-      const likerCount = Math.floor(Math.random() * groupMembers.length);
-      const likers = groupMembers.slice(0, likerCount);
-      
-      for (const liker of likers) {
-        await prisma.like.create({
-          data: {
-            user: {
-              connect: { id: liker.id },
-            },
-            post: {
-              connect: { id: post.id },
-            },
-          },
-        });
-      }
-      
-      posts.push(post);
-    }
-  }
-
-  console.log(`Created ${posts.length} posts with comments and likes`);
-
-  // Create notifications
-  // Comment notifications
-  for (const post of posts) {
-    const comments = await prisma.comment.findMany({
-      where: { postId: post.id },
-      include: { author: true },
+    // Add creator as participant
+    await prisma.eventParticipant.create({
+      data: {
+        userId: creator.id,
+        eventId: event.id,
+        status: "attending",
+      },
     });
     
-    if (comments.length === 0) continue;
+    // Add random participants
+    const participantCount = Math.floor(Math.random() * 10) + 1; // 1-10 participants
+    const potentialParticipants = users.filter(u => u.id !== creator.id);
+    const selectedParticipants = potentialParticipants
+      .sort(() => 0.5 - Math.random())
+      .slice(0, participantCount);
     
-    // Get post author
-    const postAuthor = await prisma.user.findUnique({
-      where: { id: post.authorId },
-    });
-    if (!postAuthor) continue;
-    
-    // Create notifications for comments
-    for (const comment of comments) {
-      if (comment.authorId === postAuthor.id) continue; // Skip if author is commenting on own post
+    for (const participant of selectedParticipants) {
+      const statuses = ["attending", "maybe", "invited"];
+      const status = statuses[Math.floor(Math.random() * statuses.length)];
       
-      await prisma.notification.create({
+      await prisma.eventParticipant.create({
         data: {
-          type: 'comment',
-          message: `${comment.author.name} commented on your post "${post.title.length > 30 ? post.title.substring(0, 27) + '...' : post.title}"`,
-          read: Math.random() > 0.5,
-          createdAt: comment.createdAt,
-          linkUrl: `/posts/${post.id}`,
-          actorId: comment.authorId,
-          user: {
-            connect: { id: postAuthor.id },
-          },
-          relatedId: post.id,
+          userId: participant.id,
+          eventId: event.id,
+          status,
         },
       });
-    }
-  }
-  
-  // Event notifications
-  for (const event of events) {
-    // Skip past events
-    if (event.startTime < currentDate) continue;
-    
-    // Since we've included attendees when creating events, we can access them directly
-    // Make sure attendees exists before trying to iterate
-    if (event.attendees && event.attendees.length > 0) {
-      // Create event reminder notifications for attendees
-      for (const attendee of event.attendees) {
-        if (Math.random() > 0.3) continue; // Only create for some attendees
-        
+      
+      if (status === "attending") {
+        // Create notification for attendance 
         await prisma.notification.create({
           data: {
-            type: 'EVENT_REMINDER',
-            message: `Reminder: "${event.title}" is coming up on ${event.startTime.toLocaleDateString()}`,
-            read: Math.random() > 0.7,
-            createdAt: new Date(currentDate.getTime() - (Math.floor(Math.random() * 3) + 1) * 24 * 60 * 60 * 1000), // 1-3 days ago
-            linkUrl: `/events/${event.id}`,
-            user: {
-              connect: { id: attendee.id },
-            },
-            relatedId: event.id,
-            requiresAction: Math.random() > 0.7,
+            type: "event_attendance",
+            title: `New attendee for ${event.title}`,
+            content: `${participant.name} is attending your event`,
+            userId: creator.id,
+            senderId: participant.id,
+            eventId: event.id,
           },
         });
       }
-      
-      // Create attendance query notifications for group members not yet responded
-      if (event.groupId) {
-        const group = await prisma.group.findUnique({
-          where: { id: event.groupId },
-          include: { members: true },
-        });
-        
-        if (group) {
-          // Get IDs of event attendees for filtering
-          const attendeeIds = event.attendees.map(a => a.id);
-          
-          const nonRespondedMembers = group.members.filter(m => 
-            !attendeeIds.includes(m.id) && 
-            Math.random() > 0.5 // Only create for some members
-          );
-          
-          for (const member of nonRespondedMembers) {
-            await prisma.notification.create({
-              data: {
-                type: 'EVENT_ATTENDANCE_QUERY',
-                message: `Will you attend "${event.title}" on ${event.startTime.toLocaleDateString()}?`,
-                read: Math.random() > 0.8,
-                createdAt: new Date(currentDate.getTime() - (Math.floor(Math.random() * 5) + 1) * 24 * 60 * 60 * 1000), // 1-5 days ago
-                linkUrl: `/events/${event.id}`,
-                user: {
-                  connect: { id: member.id },
-                },
-                relatedId: event.id,
-                requiresAction: true,
-              },
-            });
-          }
-        }
-      }
     }
+    
+    console.log(`Added ${participantCount} participants to event: ${event.title}`);
   }
 
-  console.log('Created various notifications');
-
-  console.log('Enhanced seed completed successfully!');
+  console.log("Seeding completed.");
 }
 
+// Run main function
 main()
   .catch((e) => {
-    console.error('Error during seeding:', e);
+    console.error(e);
     process.exit(1);
   })
   .finally(async () => {

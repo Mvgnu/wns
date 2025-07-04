@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculateGroupScore = calculateGroupScore;
 exports.getGroupRecommendations = getGroupRecommendations;
 exports.logRecommendationInteraction = logRecommendationInteraction;
-const prisma_1 = require("@/lib/prisma");
+const prisma_1 = __importDefault(require("@/lib/prisma"));
 const geolib_1 = __importDefault(require("geolib"));
 /**
  * Calculate a recommendation score for a group based on user preferences
@@ -92,7 +92,7 @@ async function calculateGroupScore(group, user) {
     // Check if group is active (has recent events or posts)
     try {
         // Check recent posts (last 30 days)
-        const recentPostsCount = await prisma_1.prisma.post.count({
+        const recentPostsCount = await prisma_1.default.post.count({
             where: {
                 groupId: group.id,
                 createdAt: {
@@ -101,7 +101,7 @@ async function calculateGroupScore(group, user) {
             },
         });
         // Check upcoming events
-        const upcomingEventsCount = await prisma_1.prisma.event.count({
+        const upcomingEventsCount = await prisma_1.default.event.count({
             where: {
                 groupId: group.id,
                 startTime: {
@@ -136,13 +136,13 @@ async function calculateGroupScore(group, user) {
 async function getGroupRecommendations(userId, limit = 5) {
     try {
         // Get user data
-        const user = await prisma_1.prisma.user.findUnique({
+        const user = await prisma_1.default.user.findUnique({
             where: { id: userId },
         });
         if (!user)
             throw new Error('User not found');
         // Get groups user is not already a member of
-        const groups = await prisma_1.prisma.group.findMany({
+        const groups = await prisma_1.default.group.findMany({
             where: {
                 NOT: {
                     members: {
@@ -194,7 +194,7 @@ async function getGroupRecommendations(userId, limit = 5) {
  */
 async function logRecommendationInteraction(userId, groupId, interaction, rating) {
     try {
-        await prisma_1.prisma.recommendationFeedback.create({
+        await prisma_1.default.recommendationFeedback.create({
             data: {
                 userId,
                 recommendationType: 'group',

@@ -1,9 +1,12 @@
 "use strict";
 'use server';
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getHomePageData = getHomePageData;
 // Ensure this code is executed ONLY on the server
-const prisma_1 = require("./prisma");
+const prisma_1 = __importDefault(require("./prisma"));
 const sportsData_1 = require("./sportsData");
 /**
  * Server-side data fetching for the homepage
@@ -15,16 +18,16 @@ async function getHomePageData() {
         // Get all sports organized by category
         const sportsByCategory = (0, sportsData_1.getSportsByCategory)();
         // Fetch important stats
-        const groupsCount = await prisma_1.prisma.group.count();
-        const locationsCount = await prisma_1.prisma.location.count();
-        const usersCount = await prisma_1.prisma.user.count();
+        const groupsCount = await prisma_1.default.group.count();
+        const locationsCount = await prisma_1.default.location.count();
+        const usersCount = await prisma_1.default.user.count();
         // Get most popular groups for each sport category
         const categoryHighlights = {};
         // Get popular groups and events for each category
         for (const category of sportsData_1.sportsCategories) {
             const sports = sportsByCategory[category].map(sport => sport.value);
             // Get most popular group for this category (most members)
-            const topGroup = await prisma_1.prisma.group.findFirst({
+            const topGroup = await prisma_1.default.group.findFirst({
                 where: {
                     sport: {
                         in: sports
@@ -53,7 +56,7 @@ async function getHomePageData() {
                 take: 1
             });
             // Get upcoming event for this category
-            const upcomingEvent = await prisma_1.prisma.event.findFirst({
+            const upcomingEvent = await prisma_1.default.event.findFirst({
                 where: {
                     group: {
                         sport: {

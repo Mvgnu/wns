@@ -1,9 +1,8 @@
-export const dynamic = "force-static";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 
 // Schema for group creation
 const groupCreateSchema = z.object({

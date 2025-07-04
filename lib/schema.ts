@@ -140,6 +140,7 @@ export function createGroupSchema(group: Group & {
 export function createLocationSchema(location: Location & {
   addedBy?: Pick<User, 'id' | 'name'>;
   _count?: { events: number; reviews: number };
+  averageRating?: number | null;
 }, baseUrl: string) {
   const locationUrl = `${baseUrl}/locations/${location.id}`;
   
@@ -180,7 +181,7 @@ export function createLocationSchema(location: Location & {
       ? {
           aggregateRating: {
             '@type': 'AggregateRating',
-            ratingValue: location.rating || 0,
+            ratingValue: location.averageRating || 0,
             reviewCount: location._count.reviews,
           },
         }

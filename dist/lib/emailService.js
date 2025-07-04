@@ -12,7 +12,7 @@ exports.sendParticipationQueries = sendParticipationQueries;
 exports.sendAttendanceReminders = sendAttendanceReminders;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const googleapis_1 = require("googleapis");
-const prisma_1 = require("./prisma");
+const prisma_1 = __importDefault(require("./prisma"));
 // Configure OAuth2 client
 const OAuth2 = googleapis_1.google.auth.OAuth2;
 const oauth2Client = new OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET, process.env.GMAIL_REDIRECT_URI);
@@ -164,7 +164,7 @@ async function sendGroupInvitationEmail(userId, groupName, inviterName, groupId)
 }
 async function sendEmail(templateType, options) {
     const { userId, templateData } = options;
-    const user = await prisma_1.prisma.user.findUnique({
+    const user = await prisma_1.default.user.findUnique({
         where: { id: userId },
         select: {
             email: true,
@@ -237,7 +237,7 @@ async function sendEmail(templateType, options) {
 async function sendParticipationQueries(eventId, hoursBeforeEvent) {
     try {
         // Get the event with group and attendees
-        const event = await prisma_1.prisma.event.findUnique({
+        const event = await prisma_1.default.event.findUnique({
             where: { id: eventId },
             include: {
                 group: {
@@ -275,7 +275,7 @@ async function sendParticipationQueries(eventId, hoursBeforeEvent) {
                 return;
             try {
                 // Create a reminder record
-                await prisma_1.prisma.eventReminder.create({
+                await prisma_1.default.eventReminder.create({
                     data: {
                         eventId: event.id,
                         userId: member.id,
@@ -315,7 +315,7 @@ async function sendParticipationQueries(eventId, hoursBeforeEvent) {
 async function sendAttendanceReminders(eventId, hoursBeforeEvent) {
     try {
         // Get the event with attendees
-        const event = await prisma_1.prisma.event.findUnique({
+        const event = await prisma_1.default.event.findUnique({
             where: { id: eventId },
             include: {
                 attendees: {
@@ -366,7 +366,7 @@ async function sendAttendanceReminders(eventId, hoursBeforeEvent) {
                 return;
             try {
                 // Create a reminder record
-                await prisma_1.prisma.eventReminder.create({
+                await prisma_1.default.eventReminder.create({
                     data: {
                         eventId: event.id,
                         userId: attendee.id,

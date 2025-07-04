@@ -4,7 +4,7 @@ import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getSafeServerSession } from "@/lib/sessionHelper";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { sendNotificationToUser } from "@/lib/notificationService";
 import { addDays, addWeeks, addMonths, isBefore, getDay, getDate } from "date-fns";
 

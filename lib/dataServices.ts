@@ -1,7 +1,7 @@
 'use server';
 // ^ Ensure server-side execution
 
-import { prisma } from './prisma';
+import prisma from './prisma';
 import { getSportsByCategory } from './sportsData';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';

@@ -17,7 +17,7 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, UserX, UserCog, Shield, User } from 'lucide-react';
+import { MoreHorizontal, UserX, UserCog, Shield, User, EyeOffIcon } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -27,6 +27,7 @@ interface Member {
   email: string;
   image: string;
   role: 'admin' | 'member';
+  isAnonymous?: boolean;
 }
 
 interface ManageMembersDialogProps {
@@ -153,6 +154,45 @@ export default function ManageMembersDialog({
     }
   };
 
+  const handleToggleAnonymity = async (memberId: string, isCurrentlyAnonymous: boolean) => {
+    try {
+      const response = await fetch(`/api/groups/${groupId}/members/${memberId}/anonymity`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isAnonymous: !isCurrentlyAnonymous }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update anonymity');
+      }
+      
+      // Update the local state
+      setMembers(members.map(member => 
+        member.id === memberId ? { ...member, isAnonymous: !isCurrentlyAnonymous } : member
+      ));
+      
+      toast({
+        title: 'Erfolg',
+        description: `Mitglied ist jetzt ${!isCurrentlyAnonymous ? 'anonym' : 'öffentlich sichtbar'}`,
+        variant: 'default',
+      });
+      
+      // Notify parent component
+      if (onMembersChange) {
+        onMembersChange();
+      }
+    } catch (error) {
+      console.error('Error changing anonymity:', error);
+      toast({
+        title: 'Fehler',
+        description: 'Anonymitätsstatus konnte nicht geändert werden',
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Check if current user is an admin
   const isCurrentUserAdmin = members.some(
     member => member.id === session?.user?.id && member.role === 'admin'
@@ -186,7 +226,15 @@ export default function ManageMembersDialog({
                         <AvatarFallback>{member.name?.charAt(0) || 'U'}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <div className="font-medium">{member.name}</div>
+                        <div className="font-medium flex items-center">
+                          {member.name}
+                          {member.isAnonymous && (
+                            <span className="ml-2 text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 flex items-center">
+                              <EyeOffIcon className="h-3 w-3 mr-1" />
+                              Anonym
+                            </span>
+                          )}
+                        </div>
                         <div className="text-sm text-gray-500 flex items-center gap-1">
                           {member.role === 'admin' ? (
                             <>
@@ -222,6 +270,16 @@ export default function ManageMembersDialog({
                               <span>Zum Mitglied machen</span>
                             </DropdownMenuItem>
                           )}
+                          
+                          <DropdownMenuItem 
+                            onClick={() => handleToggleAnonymity(member.id, !!member.isAnonymous)}
+                          >
+                            <EyeOffIcon className="mr-2 h-4 w-4" />
+                            <span>
+                              {member.isAnonymous ? 'Sichtbar machen' : 'Anonym machen'}
+                            </span>
+                          </DropdownMenuItem>
+                          
                           <DropdownMenuItem 
                             className="text-red-600" 
                             onClick={() => handleRemoveMember(member.id)}

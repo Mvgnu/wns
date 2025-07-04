@@ -9,6 +9,11 @@ const nextConfig = {
         hostname: '**',
       },
     ],
+    domains: [
+      'images.unsplash.com',
+      'lh3.googleusercontent.com',
+      'avatars.githubusercontent.com',
+    ],
   },
   reactStrictMode: true,
   compress: true,
@@ -33,6 +38,25 @@ const nextConfig = {
   // Environment variables
   env: {
     SKIP_DATABASE_CALLS: process.env.SKIP_DATABASE_CALLS === 'true' ? 'true' : 'false'
+  },
+  // Enable Next.js to properly handle API routes
+  experimental: {
+    appDir: true,
+  },
+  // Handle redirects (optional)
+  async redirects() {
+    return [
+      {
+        source: '/login',
+        destination: '/auth/signin',
+        permanent: true,
+      },
+      {
+        source: '/register',
+        destination: '/auth/signup',
+        permanent: true,
+      },
+    ];
   }
 }
 

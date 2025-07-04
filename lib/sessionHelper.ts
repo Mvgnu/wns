@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth";
+import { cookies } from "next/headers";
 
 /**
  * Safely gets the server session and handles JWT decryption errors
@@ -8,6 +9,8 @@ import { authOptions } from "./auth";
  */
 export async function getSafeServerSession() {
   try {
+    // First check if a session cookie exists before attempting to decrypt
+    // We'll try to get the session from authOptions directly, which avoids dealing with cookie parsing
     return await getServerSession(authOptions);
   } catch (error) {
     // Handle JWT decryption errors

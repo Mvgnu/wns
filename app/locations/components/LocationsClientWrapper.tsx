@@ -9,6 +9,19 @@ import { Badge } from "@/components/ui/badge";
 import { Users, Search, MapPin, ChevronRight, PlusCircle, Star, Map, Share2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Plus } from 'lucide-react';
+import dynamic from 'next/dynamic';
+
+// Dynamically import the map component to avoid SSR issues
+const LocationsMap = dynamic(() => import('./LocationsMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[400px] bg-gray-100 animate-pulse rounded-lg flex items-center justify-center">
+      <MapPin className="w-8 h-8 text-gray-400" />
+    </div>
+  ),
+});
 
 interface Sport {
   value: string;
@@ -25,38 +38,94 @@ interface Location {
   id: string;
   name: string;
   description: string | null;
-  type: string;
+  placeType: string;
+  detailType: string;
   sport: string;
+  sports: string[];
   address: string | null;
-  images: string[];
-  rating: number | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  latitude: number;
+  longitude: number;
+  image: string | null;
+  amenities: any[];
   _count: {
     reviews: number;
+    events: number;
+  };
+  averageRating: number | null;
+  staff: any[];
+  claims: Array<{
+    user: {
+      id: string;
+      name: string | null;
+      image: string | null;
+    };
+  }>;
+}
+
+interface SportCount {
+  sport: string;
+  _count: {
+    id: number;
+  };
+}
+
+interface TypeCount {
+  placeType: string;
+  _count: {
+    id: number;
+  };
+}
+
+interface DetailTypeCount {
+  detailType: string;
+  _count: {
+    id: number;
+  };
+}
+
+interface AmenityCount {
+  type: string;
+  _count: {
+    id: number;
   };
 }
 
 interface LocationsClientWrapperProps {
   locations: Location[];
-  sportCounts: any[];
-  typeCounts: any[];
+  sportCounts: SportCount[];
+  typeCounts: TypeCount[];
+  detailTypeCounts: DetailTypeCount[];
+  amenityCounts: AmenityCount[];
   selectedSports: string[];
   selectedType: string;
-  allSports: any[];
+  selectedDetailType: string;
+  selectedAmenities: string[];
+  allSports: Array<{ value: string; label: string }>;
   totalLocationsCount: number;
+  userId?: string;
 }
 
 export default function LocationsClientWrapper({
   locations,
   sportCounts,
   typeCounts,
+  detailTypeCounts,
+  amenityCounts,
   selectedSports,
   selectedType,
+  selectedDetailType,
+  selectedAmenities,
   allSports,
-  totalLocationsCount
+  totalLocationsCount,
+  userId
 }: LocationsClientWrapperProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchInput, setSearchInput] = useState(searchParams.get("search") || "");
+  const [view, setView] = useState<'grid' | 'map'>('grid');
   
   const sportParam = searchParams.get("sport");
   const sportsParam = searchParams.get("sports");
@@ -115,6 +184,11 @@ export default function LocationsClientWrapper({
     );
   };
   
+  // Get locations with coordinates for the map
+  const locationsWithCoords = locations.filter(
+    location => location.latitude && location.longitude
+  );
+
   return (
     <div className="relative overflow-hidden min-h-screen">
       {/* Decorative elements */}
@@ -220,18 +294,16 @@ export default function LocationsClientWrapper({
                   </form>
                 </div>
               
-                <LocationsFilter 
-                  sports={sportCounts.map((item) => ({
-                    value: item.sport,
-                    label: allSports.find(s => s.value === item.sport)?.label || item.sport,
-                    count: item._count?.id || 0,
-                  }))} 
-                  types={typeCounts.map((item) => ({
-                    value: item.type,
-                    count: item._count?.id || 0,
-                  }))}
-                  selectedSports={selectedSports} 
+                <LocationsFilter
+                  sportCounts={sportCounts}
+                  typeCounts={typeCounts}
+                  detailTypeCounts={detailTypeCounts}
+                  amenityCounts={amenityCounts}
+                  selectedSports={selectedSports}
                   selectedType={selectedType}
+                  selectedDetailType={selectedDetailType}
+                  selectedAmenities={selectedAmenities}
+                  allSports={allSports}
                 />
               </div>
               
@@ -240,8 +312,8 @@ export default function LocationsClientWrapper({
                 <h3 className="font-medium text-green-800 mb-3">Beliebte Typen</h3>
                 <div className="space-y-2">
                   {typeCounts.slice(0, 3).map(item => (
-                    <div key={item.type} className="flex justify-between items-center">
-                      <span className="text-sm text-gray-700">{item.type}</span>
+                    <div key={item.placeType} className="flex justify-between items-center">
+                      <span className="text-sm text-gray-700">{item.placeType}</span>
                       <Badge variant="outline" className="bg-white text-green-600">
                         {item._count.id} Orte
                       </Badge>
@@ -341,151 +413,188 @@ export default function LocationsClientWrapper({
               </div>
             )}
 
-            {locations.length === 0 ? (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-50 text-green-500 mb-6">
-                  <MapPin className="w-8 h-8" />
+            {/* View toggle */}
+            <div className="mb-8">
+              <Tabs value={view} onValueChange={(v) => setView(v as 'grid' | 'map')} className="w-full">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-1 mb-6">
+                  <TabsList className="w-full bg-transparent">
+                    <TabsTrigger 
+                      value="grid" 
+                      className="flex-1 data-[state=active]:bg-green-50 data-[state=active]:text-green-700"
+                    >
+                      <MapPin className="w-4 h-4 mr-2" />
+                      Listenansicht
+                    </TabsTrigger>
+                    <TabsTrigger 
+                      value="map" 
+                      className="flex-1 data-[state=active]:bg-green-50 data-[state=active]:text-green-700"
+                    >
+                      <MapPin className="w-4 h-4 mr-2" />
+                      Kartenansicht
+                    </TabsTrigger>
+                  </TabsList>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">Keine Locations gefunden</h3>
-                <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                  {searchParam
-                    ? `Es wurden keine Locations zu "${searchParam}" gefunden.`
-                    : typeParam
-                      ? `Es gibt noch keine Locations vom Typ "${typeParam}".`
-                      : sportParam
-                        ? `Es gibt noch keine Locations für ${allSports.find(s => s.value === sportParam)?.label || sportParam}.`
-                        : sportsParam
-                          ? "Es gibt keine Locations, die den ausgewählten Filtern entsprechen."
-                          : "Es gibt noch keine Locations."}
-                </p>
-                <div className="flex justify-center gap-4">
-                  <Button asChild variant="outline" className="px-6">
-                    <Link href="/locations">Alle anzeigen</Link>
-                  </Button>
-                  <Button asChild className="px-6">
-                    <Link href="/locations/create">Location hinzufügen</Link>
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {locations.map((location: Location) => (
-                    <Card key={location.id} className="overflow-hidden hover:shadow-md transition-all duration-300 h-full flex flex-col group border-gray-100">
-                      <div className="h-48 bg-gray-100 relative overflow-hidden">
-                        {location.images && location.images.length > 0 ? (
-                          <img
-                            src={location.images[0]}
-                            alt={location.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-100 text-green-600">
-                            <span className="text-4xl font-bold opacity-40">{location.name.charAt(0)}</span>
-                          </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent text-white">
-                          <div className="flex flex-wrap gap-2 mb-1">
-                            <Badge className="bg-green-500/90 hover:bg-green-600 border-none text-white">
-                              {location.type}
-                            </Badge>
-                            <Badge className="bg-blue-500/90 hover:bg-blue-600 border-none text-white">
-                              {allSports.find(s => s.value === location.sport)?.label || location.sport}
-                            </Badge>
-                          </div>
-                          <h3 className="font-semibold line-clamp-1">{location.name}</h3>
-                        </div>
+
+                <TabsContent value="grid" className="mt-0">
+                  {locations.length === 0 ? (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-50 text-green-500 mb-6">
+                        <MapPin className="w-8 h-8" />
                       </div>
-                      
-                      <CardContent className="py-4 flex-grow">
-                        {location.rating !== null && (
-                          <div className="flex items-center text-sm text-gray-500 mb-3">
-                            <Star className="h-4 w-4 mr-2 text-yellow-500 fill-yellow-500" />
-                            <span>
-                              {location.rating.toFixed(1)} {location._count.reviews > 0 && `(${location._count.reviews})`}
-                            </span>
-                          </div>
-                        )}
-                        
-                        {location.address && (
-                          <div className="flex items-center text-sm text-gray-500 mb-3">
-                            <MapPin className="h-4 w-4 mr-2 text-green-500" />
-                            <span className="line-clamp-1">{location.address}</span>
-                          </div>
-                        )}
-                        
-                        {location.description && (
-                          <p className="text-gray-600 mt-4 line-clamp-2 text-sm">
-                            {location.description}
-                          </p>
-                        )}
-                      </CardContent>
-                      
-                      <CardFooter className="pt-0 pb-4">
-                        <Button variant="outline" size="sm" className="w-full group-hover:bg-green-50 group-hover:text-green-600 transition-colors duration-300" asChild>
-                          <Link href={`/locations/${location.id}`} className="flex items-center justify-center">
-                            Details ansehen
-                            <ChevronRight className="ml-1 w-4 h-4" />
-                          </Link>
+                      <h3 className="text-xl font-semibold text-gray-900 mb-3">Keine Locations gefunden</h3>
+                      <p className="text-gray-500 mb-8 max-w-md mx-auto">
+                        {searchParam
+                          ? `Es wurden keine Locations zu "${searchParam}" gefunden.`
+                          : typeParam
+                            ? `Es gibt noch keine Locations vom Typ "${typeParam}".`
+                            : sportParam
+                              ? `Es gibt noch keine Locations für ${allSports.find(s => s.value === sportParam)?.label || sportParam}.`
+                              : sportsParam
+                                ? "Es gibt keine Locations, die den ausgewählten Filtern entsprechen."
+                                : "Es gibt noch keine Locations."}
+                      </p>
+                      <div className="flex justify-center gap-4">
+                        <Button asChild variant="outline" className="px-6">
+                          <Link href="/locations">Alle anzeigen</Link>
                         </Button>
-                      </CardFooter>
-                    </Card>
-                  ))}
-                </div>
-                
-                {/* Inspiration Section */}
-                <div className="mt-16 bg-gradient-to-br from-gray-50 to-white rounded-xl p-8 shadow-sm border border-gray-100">
-                  <div className="max-w-3xl mx-auto text-center">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-4">Entdecke die perfekten Sport-Locations</h2>
-                    <p className="text-gray-600 mb-8">
-                      Von versteckten Laufstrecken bis zu den besten Sportplätzen – finde Orte, die zu deinen Aktivitäten passen, 
-                      und teile deine Erfahrungen mit der Community.
-                    </p>
-                    
-                    <div className="grid md:grid-cols-3 gap-6">
-                      <div className="bg-white p-5 rounded-lg shadow-sm">
-                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-50 text-green-600 mb-4">
-                          <MapPin className="h-6 w-6" />
-                        </div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Locations entdecken</h3>
-                        <p className="text-gray-500 text-sm mb-4">
-                          Finde die besten Orte für deine Sportaktivitäten in deiner Nähe.
-                        </p>
-                        <Link href="/locations" className="text-green-600 hover:underline text-sm font-medium">
-                          Jetzt entdecken →
-                        </Link>
-                      </div>
-                      
-                      <div className="bg-white p-5 rounded-lg shadow-sm">
-                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600 mb-4">
-                          <PlusCircle className="h-6 w-6" />
-                        </div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Location hinzufügen</h3>
-                        <p className="text-gray-500 text-sm mb-4">
-                          Teile deine Lieblingsorte und hilf anderen, sie zu entdecken.
-                        </p>
-                        <Link href="/locations/create" className="text-blue-600 hover:underline text-sm font-medium">
-                          Location hinzufügen →
-                        </Link>
-                      </div>
-                      
-                      <div className="bg-white p-5 rounded-lg shadow-sm">
-                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-purple-50 text-purple-600 mb-4">
-                          <Share2 className="h-6 w-6" />
-                        </div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Erfahrungen teilen</h3>
-                        <p className="text-gray-500 text-sm mb-4">
-                          Bewerte Locations und teile deine Erfahrungen mit der Community.
-                        </p>
-                        <Link href="/auth/signin" className="text-purple-600 hover:underline text-sm font-medium">
-                          Anmelden & Beitragen →
-                        </Link>
+                        <Button asChild className="px-6">
+                          <Link href="/locations/create">Location hinzufügen</Link>
+                        </Button>
                       </div>
                     </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {locations.map((location: Location) => (
+                        <Card key={location.id} className="overflow-hidden hover:shadow-md transition-all duration-300 h-full flex flex-col group border-gray-100">
+                          <div className="h-48 bg-gray-100 relative overflow-hidden">
+                            {location.image ? (
+                              <img
+                                src={location.image}
+                                alt={location.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-100 text-green-600">
+                                <span className="text-4xl font-bold opacity-40">{location.name.charAt(0)}</span>
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent text-white">
+                              <div className="flex flex-wrap gap-2 mb-1">
+                                <Badge className="bg-green-500/90 hover:bg-green-600 border-none text-white">
+                                  {location.placeType}
+                                </Badge>
+                                <Badge className="bg-blue-500/90 hover:bg-blue-600 border-none text-white">
+                                  {location.sport}
+                                </Badge>
+                              </div>
+                              <h3 className="font-semibold line-clamp-1">{location.name}</h3>
+                            </div>
+                          </div>
+                          
+                          <CardContent className="py-4 flex-grow">
+                            {location.averageRating !== null && (
+                              <div className="flex items-center text-sm text-gray-500 mb-3">
+                                <Star className="h-4 w-4 mr-2 text-yellow-500 fill-yellow-500" />
+                                <span>
+                                  {location.averageRating.toFixed(1)} {location._count.reviews > 0 && `(${location._count.reviews})`}
+                                </span>
+                              </div>
+                            )}
+                            
+                            {location.address && (
+                              <div className="flex items-center text-sm text-gray-500 mb-3">
+                                <MapPin className="h-4 w-4 mr-2 text-green-500" />
+                                <span className="line-clamp-1">{location.address}</span>
+                              </div>
+                            )}
+                            
+                            {location.description && (
+                              <p className="text-gray-600 mt-4 line-clamp-2 text-sm">
+                                {location.description}
+                              </p>
+                            )}
+                          </CardContent>
+                          
+                          <CardFooter className="pt-0 pb-4">
+                            <Button variant="outline" size="sm" className="w-full group-hover:bg-green-50 group-hover:text-green-600 transition-colors duration-300" asChild>
+                              <Link href={`/locations/${location.id}`} className="flex items-center justify-center">
+                                Details ansehen
+                                <ChevronRight className="ml-1 w-4 h-4" />
+                              </Link>
+                            </Button>
+                          </CardFooter>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="map" className="mt-0">
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <LocationsMap 
+                      locations={locationsWithCoords}
+                      center={
+                        locationsWithCoords.length > 0
+                          ? [locationsWithCoords[0].latitude!, locationsWithCoords[0].longitude!]
+                          : [51.1657, 10.4515] // Germany center
+                      }
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
+            
+            {/* Inspiration Section */}
+            <div className="mt-16 bg-gradient-to-br from-gray-50 to-white rounded-xl p-8 shadow-sm border border-gray-100">
+              <div className="max-w-3xl mx-auto text-center">
+                <h2 className="text-2xl font-bold text-gray-900 mb-4">Entdecke die perfekten Sport-Locations</h2>
+                <p className="text-gray-600 mb-8">
+                  Von versteckten Laufstrecken bis zu den besten Sportplätzen – finde Orte, die zu deinen Aktivitäten passen, 
+                  und teile deine Erfahrungen mit der Community.
+                </p>
+                
+                <div className="grid md:grid-cols-3 gap-6">
+                  <div className="bg-white p-5 rounded-lg shadow-sm">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-50 text-green-600 mb-4">
+                      <MapPin className="h-6 w-6" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-2">Locations entdecken</h3>
+                    <p className="text-gray-500 text-sm mb-4">
+                      Finde die besten Orte für deine Sportaktivitäten in deiner Nähe.
+                    </p>
+                    <Link href="/locations" className="text-green-600 hover:underline text-sm font-medium">
+                      Jetzt entdecken →
+                    </Link>
+                  </div>
+                  
+                  <div className="bg-white p-5 rounded-lg shadow-sm">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-50 text-blue-600 mb-4">
+                      <PlusCircle className="h-6 w-6" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-2">Location hinzufügen</h3>
+                    <p className="text-gray-500 text-sm mb-4">
+                      Teile deine Lieblingsorte und hilf anderen, sie zu entdecken.
+                    </p>
+                    <Link href="/locations/create" className="text-blue-600 hover:underline text-sm font-medium">
+                      Location hinzufügen →
+                    </Link>
+                  </div>
+                  
+                  <div className="bg-white p-5 rounded-lg shadow-sm">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-purple-50 text-purple-600 mb-4">
+                      <Share2 className="h-6 w-6" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-2">Erfahrungen teilen</h3>
+                    <p className="text-gray-500 text-sm mb-4">
+                      Bewerte Locations und teile deine Erfahrungen mit der Community.
+                    </p>
+                    <Link href="/auth/signin" className="text-purple-600 hover:underline text-sm font-medium">
+                      Anmelden & Beitragen →
+                    </Link>
                   </div>
                 </div>
-              </>
-            )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

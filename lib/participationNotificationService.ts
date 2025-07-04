@@ -1,4 +1,4 @@
-import { prisma } from './prisma';
+import prisma from './prisma';
 import { sendNotificationToUser } from './notificationService';
 import { Prisma } from '@prisma/client';
 import { sendParticipationQueryEmail, sendAttendanceReminderEmail } from './emailService';
@@ -73,12 +73,12 @@ export async function sendParticipationQueryNotifications(hoursBeforeEvent: numb
       for (const member of groupMembers) {
         // Check if the user already has a participation response
         const existingResponse = event.participationResponses.find(
-          (response) => response.userId === member.id
+          (response: { userId: string }) => response.userId === member.id
         );
         
         // Check if user is already attending
         const isAttending = event.attendees.some(
-          (attendee) => attendee.id === member.id
+          (attendee: { id: string }) => attendee.id === member.id
         );
         
         // Only send notification if no response and not attending

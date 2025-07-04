@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Calendar, Clock, MapPin, Users, Share2, Heart, Edit, Trash2, ChevronLeft, ExternalLink, RefreshCw } from "lucide-react";
+import { Calendar, Clock, MapPin, Users, Share2, Heart, Edit, Trash2, ChevronLeft, ExternalLink, RefreshCw, Lock, LockOpen, DollarSign, Users2 } from "lucide-react";
 import { format, formatDistanceToNow, differenceInMinutes } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "@/components/ui/use-toast";
@@ -31,6 +31,15 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 // Define the Event type
+interface GroupMember {
+  userId: string;
+  role: string;
+}
+
+interface GroupMemberLegacy {
+  id: string;
+}
+
 interface EventType {
   id: string;
   title: string;
@@ -39,6 +48,41 @@ interface EventType {
   startTime: string;
   endTime?: string;
   sport?: string;
+  isRecurring?: boolean;
+  recurringPattern?: string;
+  recurringDays?: number[];
+  recurringEndDate?: string;
+  isPaid?: boolean;
+  price?: number;
+  priceCurrency?: string;
+  priceDescription?: string;
+  joinRestriction?: 'everyone' | 'groupOnly' | 'inviteOnly';
+  maxAttendees?: number;
+  isSoldOut?: boolean;
+  _count?: {
+    attendees: number;
+  };
+  pricingTiers?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    price: number;
+    capacity?: number;
+    startDate?: string;
+    endDate?: string;
+    isActive: boolean;
+  }>;
+  discountCodes?: Array<{
+    id: string;
+    code: string;
+    discountType: 'percentage' | 'fixed';
+    discountValue: number;
+    maxUses?: number;
+    currentUses: number;
+    startDate?: string;
+    endDate?: string;
+    isActive: boolean;
+  }>;
   location?: {
     id: string;
     name: string;
@@ -51,7 +95,7 @@ interface EventType {
     name: string;
     isPrivate: boolean;
     memberCount?: number;
-    members?: Array<{userId: string; role: string}> | Array<{id: string}>;
+    members?: Array<GroupMember | GroupMemberLegacy>;
     _count?: {
       members: number;
     };
@@ -71,7 +115,6 @@ interface EventType {
     }
   }>;
   url?: string;
-  repeatPattern?: string;
 }
 
 interface EventClientProps {
@@ -118,7 +161,12 @@ export default function EventDetailClient({
   const isEventOver = new Date(event.endTime || event.startTime) < new Date();
   const canEdit = session?.user?.id === event.createdById || 
                  (event.group && event.group.members?.some(
-                   (member) => member.userId === session?.user?.id && member.role === "ADMIN"
+                   (member) => {
+                     if ('userId' in member && 'role' in member) {
+                       return member.userId === session?.user?.id && member.role === "ADMIN";
+                     }
+                     return false;
+                   }
                  ));
 
   return (
@@ -154,9 +202,46 @@ export default function EventDetailClient({
                 {formatDistanceToNow(new Date(event.startTime), { addSuffix: true, locale: de })}
               </Badge>
             )}
+            {event.isRecurring && (
+              <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Wiederkehrend
+              </Badge>
+            )}
+            {event.isPaid && (
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                <DollarSign className="h-3 w-3 mr-1" />
+                {new Intl.NumberFormat('de-DE', {
+                  style: 'currency',
+                  currency: event.priceCurrency || 'EUR'
+                }).format(event.price || 0)}
+              </Badge>
+            )}
+            {event.joinRestriction === 'groupOnly' ? (
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                <Lock className="h-3 w-3 mr-1" />
+                Nur Gruppe
+              </Badge>
+            ) : event.joinRestriction === 'inviteOnly' ? (
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                <Lock className="h-3 w-3 mr-1" />
+                Nur mit Einladung
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                <LockOpen className="h-3 w-3 mr-1" />
+                Öffentlich
+              </Badge>
+            )}
             {event.group?.isPrivate && (
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                <Users2 className="h-3 w-3 mr-1" />
                 Private Gruppe
+              </Badge>
+            )}
+            {event.isSoldOut && (
+              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                Ausverkauft
               </Badge>
             )}
           </div>
@@ -268,6 +353,122 @@ export default function EventDetailClient({
                   </div>
                 ) : (
                   <p className="text-gray-500 italic">Keine Beschreibung vorhanden</p>
+                )}
+
+                {/* Pricing section */}
+                {event.isPaid && (
+                  <div className="mt-8">
+                    <h3 className="text-lg font-semibold mb-4">Preise & Tickets</h3>
+                    
+                    {/* Base price if no tiers */}
+                    {(!event.pricingTiers || event.pricingTiers.length === 0) && (
+                      <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium">Standard Ticket</p>
+                            {event.priceDescription && (
+                              <p className="text-sm text-gray-600 mt-1">{event.priceDescription}</p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold">
+                              {new Intl.NumberFormat('de-DE', {
+                                style: 'currency',
+                                currency: event.priceCurrency || 'EUR'
+                              }).format(event.price || 0)}
+                            </p>
+                            {event.maxAttendees && (
+                              <p className="text-sm text-gray-600">
+                                {event._count?.attendees || 0} / {event.maxAttendees} verfügbar
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pricing tiers */}
+                    {event.pricingTiers && event.pricingTiers.length > 0 && (
+                      <div className="space-y-3">
+                        {event.pricingTiers
+                          .filter(tier => tier.isActive)
+                          .map(tier => (
+                          <div key={tier.id} className="bg-gray-50 rounded-lg p-4">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="font-medium">{tier.name}</p>
+                                {tier.description && (
+                                  <p className="text-sm text-gray-600 mt-1">{tier.description}</p>
+                                )}
+                                {(tier.startDate || tier.endDate) && (
+                                  <p className="text-sm text-gray-600 mt-1">
+                                    {tier.startDate && `Ab ${format(new Date(tier.startDate), 'dd.MM.yyyy', { locale: de })}`}
+                                    {tier.startDate && tier.endDate && ' - '}
+                                    {tier.endDate && `Bis ${format(new Date(tier.endDate), 'dd.MM.yyyy', { locale: de })}`}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-semibold">
+                                  {new Intl.NumberFormat('de-DE', {
+                                    style: 'currency',
+                                    currency: event.priceCurrency || 'EUR'
+                                  }).format(tier.price)}
+                                </p>
+                                {tier.capacity && (
+                                  <p className="text-sm text-gray-600">
+                                    {/* You might want to add a count of used capacity in your API */}
+                                    {tier.capacity} Plätze verfügbar
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Discount codes section */}
+                    {event.discountCodes && event.discountCodes.length > 0 && (
+                      <div className="mt-6">
+                        <h4 className="text-md font-semibold mb-3">Verfügbare Rabattcodes</h4>
+                        <div className="space-y-2">
+                          {event.discountCodes
+                            .filter(code => code.isActive)
+                            .map(code => (
+                            <div key={code.id} className="bg-emerald-50 rounded-lg p-3">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <p className="font-mono font-medium text-emerald-700">{code.code}</p>
+                                  <p className="text-sm text-emerald-600">
+                                    {code.discountType === 'percentage' 
+                                      ? `${code.discountValue}% Rabatt`
+                                      : `${new Intl.NumberFormat('de-DE', {
+                                          style: 'currency',
+                                          currency: event.priceCurrency || 'EUR'
+                                        }).format(code.discountValue)} Rabatt`
+                                    }
+                                  </p>
+                                </div>
+                                {code.maxUses && (
+                                  <p className="text-sm text-emerald-600">
+                                    {code.maxUses - code.currentUses} verbleibend
+                                  </p>
+                                )}
+                              </div>
+                              {(code.startDate || code.endDate) && (
+                                <p className="text-xs text-emerald-600 mt-1">
+                                  {code.startDate && `Gültig ab ${format(new Date(code.startDate), 'dd.MM.yyyy', { locale: de })}`}
+                                  {code.startDate && code.endDate && ' - '}
+                                  {code.endDate && `bis ${format(new Date(code.endDate), 'dd.MM.yyyy', { locale: de })}`}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
                 
                 {event.url && (
@@ -476,12 +677,25 @@ export default function EventDetailClient({
                     </div>
                   </div>
                   
-                  {event.repeatPattern && (
+                  {event.isRecurring && (
                     <div className="flex items-start">
                       <RefreshCw className="h-5 w-5 mr-3 text-blue-500 mt-0.5" />
                       <div>
                         <p className="font-medium">Wiederholung</p>
-                        <p className="text-sm text-gray-500">{event.repeatPattern}</p>
+                        <p className="text-sm text-gray-500">
+                          {event.recurringPattern === 'weekly' ? 'Wöchentlich' : 
+                           event.recurringPattern === 'monthly' ? 'Monatlich' : 
+                           event.recurringPattern === 'daily' ? 'Täglich' : 
+                           'Wiederkehrend'}
+                          {event.recurringDays && event.recurringDays.length > 0 && (
+                            ` an ${event.recurringDays.map(day => 
+                              ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'][day]
+                            ).join(', ')}`
+                          )}
+                          {event.recurringEndDate && (
+                            ` bis ${format(new Date(event.recurringEndDate), 'dd.MM.yyyy', { locale: de })}`
+                          )}
+                        </p>
                       </div>
                     </div>
                   )}

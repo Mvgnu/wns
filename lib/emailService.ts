@@ -2,7 +2,7 @@
 
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
-import { prisma } from './prisma';
+import prisma from './prisma';
 
 // Configure OAuth2 client
 const OAuth2 = google.auth.OAuth2;
@@ -361,7 +361,7 @@ export async function sendParticipationQueries(eventId: string, hoursBeforeEvent
     });
 
     // Send emails to all group members
-    const emailPromises = event.group.members.map(async (member) => {
+    const emailPromises = event.group.members.map(async (member: { id: string, email: string | null, name: string | null }) => {
       if (!member.email) return;
 
       try {
@@ -460,7 +460,7 @@ export async function sendAttendanceReminders(eventId: string, hoursBeforeEvent:
     });
 
     // Send emails to all attendees
-    const emailPromises = uniqueAttendees.map(async (attendee) => {
+    const emailPromises = uniqueAttendees.map(async (attendee: { id: string, email: string | null, name: string | null }) => {
       if (!attendee.email) return;
 
       try {

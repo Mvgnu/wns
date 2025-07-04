@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from './prisma';
+import prisma from './prisma';
 
 interface RecommendationOptions {
   userId: string;
@@ -101,7 +101,7 @@ export async function getRecommendedGroups({
       {
         NOT: {
           id: {
-            in: user.memberGroups.map(g => g.id),
+            in: user.memberGroups.map((g: { id: string }) => g.id),
           },
         },
       },
@@ -145,7 +145,7 @@ export async function getRecommendedGroups({
   });
 
   // Calculate scores for each group
-  const scoredGroups = groups.map(group => {
+  const scoredGroups = groups.map((group: any) => {
     let score = 0;
 
     // Sport match score

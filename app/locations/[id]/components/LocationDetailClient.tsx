@@ -39,8 +39,26 @@ import {
   ArrowUpRight,
   ThumbsUp,
   CalendarDays,
-  PlusCircle
+  PlusCircle,
+  Droplet,
+  Coffee,
+  ShoppingBag,
+  Sparkles,
+  ShowerHead,
+  Car,
+  CreditCard,
+  Wifi,
+  Bath,
+  Waves,
+  Hammer,
+  Bike,
+  Dumbbell,
+  Accessibility,
+  Video,
+  Euro,
+  UserCircle2
 } from 'lucide-react';
+import ClaimPlaceButton from '@/components/locations/ClaimPlaceButton';
 
 // Define types
 interface User {
@@ -70,6 +88,48 @@ interface Event {
   };
 }
 
+interface Amenity {
+  id: string;
+  type: string;
+  details: any;
+  isAvailable: boolean;
+}
+
+interface Video {
+  id: string;
+  title: string;
+  description: string | null;
+  url: string;
+  thumbnailUrl: string | null;
+  duration: number | null;
+  featured: boolean;
+  uploadedBy: User;
+  createdAt: Date;
+}
+
+interface Price {
+  id: string;
+  name: string;
+  description: string | null;
+  amount: number;
+  currency: string;
+  period: string | null;
+  isRecurring: boolean;
+}
+
+interface Staff {
+  id: string;
+  role: string;
+  title: string | null;
+  bio: string | null;
+  specialties: string[];
+  certifications: string[];
+  yearsExperience: number | null;
+  schedule: any;
+  socialLinks: any;
+  user: User;
+}
+
 interface Location {
   id: string;
   name: string;
@@ -88,12 +148,22 @@ interface Location {
   events: Event[];
   isLineBased?: boolean;
   coordinates?: any[];
+  placeType: string;
+  amenities: Amenity[];
+  videos: Video[];
+  prices: Price[];
+  staff: Staff[];
 }
 
 interface LocationDetailClientProps {
   location: Location;
   averageRating: number;
   sportLabel: string;
+  userIsStaff?: boolean;
+  existingClaim?: {
+    id: string;
+    status: string;
+  } | null;
 }
 
 // Helper function to format date and time
@@ -104,7 +174,9 @@ const formatTime = (date: Date): string => {
 export default function LocationDetailClient({
   location,
   averageRating,
-  sportLabel
+  sportLabel,
+  userIsStaff = false,
+  existingClaim = null
 }: LocationDetailClientProps) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -227,6 +299,74 @@ export default function LocationDetailClient({
     return <div className="flex">{stars}</div>;
   };
 
+  // Helper function to get icon for amenity type
+  const getAmenityIcon = (type: string) => {
+    const iconMap: Record<string, any> = {
+      SHOWER: <ShowerHead className="h-5 w-5" />,
+      FOOD: <Coffee className="h-5 w-5" />,
+      SHOP: <ShoppingBag className="h-5 w-5" />,
+      WELLNESS: <Sparkles className="h-5 w-5" />,
+      LOCKER_ROOM: <Bath className="h-5 w-5" />,
+      PARKING: <Car className="h-5 w-5" />,
+      CARD_PAYMENT: <CreditCard className="h-5 w-5" />,
+      WIFI: <Wifi className="h-5 w-5" />,
+      RESTROOM: <Bath className="h-5 w-5" />,
+      WATER_FOUNTAIN: <Waves className="h-5 w-5" />,
+      EQUIPMENT_RENTAL: <Hammer className="h-5 w-5" />,
+      FIRST_AID: <Droplet className="h-5 w-5" />,
+      CHILDCARE: <Users className="h-5 w-5" />,
+      DISABLED_ACCESS: <Accessibility className="h-5 w-5" />,
+      BIKE_STORAGE: <Bike className="h-5 w-5" />,
+      TRAINING_AREA: <Dumbbell className="h-5 w-5" />
+    };
+    
+    return iconMap[type] || <Info className="h-5 w-5" />;
+  };
+  
+  // Helper function to get human-readable name for amenity type
+  const getAmenityName = (type: string) => {
+    const nameMap: Record<string, string> = {
+      SHOWER: 'Duschen',
+      FOOD: 'Essen',
+      SHOP: 'Shop',
+      WELLNESS: 'Wellness',
+      LOCKER_ROOM: 'Umkleiden',
+      PARKING: 'Parkplatz',
+      CARD_PAYMENT: 'Kartenzahlung',
+      WIFI: 'WLAN',
+      RESTROOM: 'Toiletten',
+      WATER_FOUNTAIN: 'Trinkbrunnen',
+      EQUIPMENT_RENTAL: 'Ausrüstungsverleih',
+      FIRST_AID: 'Erste Hilfe',
+      CHILDCARE: 'Kinderbetreuung',
+      DISABLED_ACCESS: 'Barrierefreiheit',
+      BIKE_STORAGE: 'Fahrradabstellplatz',
+      TRAINING_AREA: 'Trainingsbereich'
+    };
+    
+    return nameMap[type] || type;
+  };
+  
+  // Helper function for formatting video duration
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return '--:--';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+  
+  // Helper function to extract video ID from URL
+  const getVideoEmbedUrl = (url: string) => {
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      const videoId = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+      return videoId ? `https://www.youtube.com/embed/${videoId[1]}` : '';
+    } else if (url.includes('vimeo.com')) {
+      const videoId = url.match(/vimeo\.com\/(?:.*\/)?(?:videos\/)?([0-9]+)/);
+      return videoId ? `https://player.vimeo.com/video/${videoId[1]}` : '';
+    }
+    return '';
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden pb-16">
       {/* Decorative elements */}
@@ -304,7 +444,7 @@ export default function LocationDetailClient({
             <div className="flex items-center text-white/70 text-sm">
               <span>Hinzugefügt von {location.addedBy.name || 'Anonym'}</span>
               <span className="mx-2">•</span>
-              <span>{formatDistanceToNow(new Date(location.createdAt), { addSuffix: true, locale: de })}</span>
+              <span>{formatDistanceToNow(new Date(location.createdAt), { locale: de })}</span>
             </div>
           </div>
         </div>
@@ -315,20 +455,33 @@ export default function LocationDetailClient({
           {/* Main content */}
           <div className="lg:w-2/3">
             {/* Action buttons */}
-            <div className="flex flex-wrap gap-3 mb-8">
-              <Button onClick={handleShareClick} variant="outline" className="gap-2">
-                <Share2 className="h-4 w-4" />
-                Teilen
+            <div className="flex flex-wrap gap-2 mt-3">
+              <Button variant="outline" size="sm" onClick={handleShareClick}>
+                <Share2 className="h-4 w-4 mr-2" /> Teilen
               </Button>
-              <Button onClick={() => setIsReviewDialogOpen(true)} className="gap-2 bg-green-600 hover:bg-green-700">
-                <Star className="h-4 w-4" />
-                Bewertung
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsReviewDialogOpen(true)}
+              >
+                <Star className="h-4 w-4 mr-2" /> Bewerten
               </Button>
+              
+              {!userIsStaff && (
+                <ClaimPlaceButton 
+                  placeId={location.id}
+                  placeName={location.name}
+                  placeType={location.placeType}
+                  userIsMember={userIsStaff}
+                  hasExistingClaim={!!existingClaim && existingClaim.status === 'pending'}
+                />
+              )}
+              
               {session?.user?.id === location.addedBy.id && (
-                <Button variant="outline" className="gap-2" asChild>
+                <Button variant="outline" size="sm" asChild>
                   <Link href={`/locations/${location.id}/edit`}>
-                    <MessageSquare className="h-4 w-4" />
-                    Bearbeiten
+                    <MessageSquare className="h-4 w-4 mr-2" /> Bearbeiten
                   </Link>
                 </Button>
               )}
@@ -343,6 +496,34 @@ export default function LocationDetailClient({
                 >
                   <Info className="h-4 w-4 mr-2" />
                   Info
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="amenities" 
+                  className="data-[state=active]:bg-white data-[state=active]:text-green-700 data-[state=active]:shadow-sm"
+                >
+                  <Droplet className="h-4 w-4 mr-2" />
+                  Ausstattung
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="videos" 
+                  className="data-[state=active]:bg-white data-[state=active]:text-green-700 data-[state=active]:shadow-sm"
+                >
+                  <Video className="h-4 w-4 mr-2" />
+                  Videos
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="pricing" 
+                  className="data-[state=active]:bg-white data-[state=active]:text-green-700 data-[state=active]:shadow-sm"
+                >
+                  <Euro className="h-4 w-4 mr-2" />
+                  Preise
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="staff" 
+                  className="data-[state=active]:bg-white data-[state=active]:text-green-700 data-[state=active]:shadow-sm"
+                >
+                  <UserCircle2 className="h-4 w-4 mr-2" />
+                  Team
                 </TabsTrigger>
                 <TabsTrigger 
                   value="map" 
@@ -464,6 +645,264 @@ export default function LocationDetailClient({
                 </Card>
               </TabsContent>
               
+              {/* Amenities Tab */}
+              <TabsContent value="amenities" className="mt-0">
+                <Card className="border-gray-100 shadow-sm bg-white">
+                  <CardHeader>
+                    <CardTitle>Ausstattung</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {location.amenities && location.amenities.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {location.amenities.map((amenity) => (
+                          <div 
+                            key={amenity.id} 
+                            className={`flex items-center p-4 rounded-lg border ${
+                              amenity.isAvailable 
+                                ? 'border-green-100 bg-green-50' 
+                                : 'border-gray-100 bg-gray-50 opacity-60'
+                            }`}
+                          >
+                            <div className={`p-3 rounded-full mr-3 ${
+                              amenity.isAvailable ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                              {getAmenityIcon(amenity.type)}
+                            </div>
+                            <div>
+                              <p className="font-medium">{getAmenityName(amenity.type)}</p>
+                              {amenity.details && Object.keys(amenity.details).length > 0 && (
+                                <p className="text-sm text-gray-600 mt-1">
+                                  {Object.entries(amenity.details).map(([key, value]) => {
+                                    if (typeof value === 'boolean') {
+                                      return value ? key.replace(/([A-Z])/g, ' $1').toLowerCase() : '';
+                                    } else if (typeof value === 'number' || typeof value === 'string') {
+                                      return `${key.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${value}`;
+                                    }
+                                    return '';
+                                  }).filter(Boolean).join(', ')}
+                                </p>
+                              )}
+                              {!amenity.isAvailable && (
+                                <Badge variant="outline" className="mt-2 text-xs bg-white">Derzeit nicht verfügbar</Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 text-gray-500 mb-4">
+                          <Droplet className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-xl font-medium text-gray-900 mb-2">Keine Ausstattungsinformationen</h3>
+                        <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                          Für diese Location wurden noch keine Ausstattungsdetails hinterlegt.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
+              {/* Videos Tab */}
+              <TabsContent value="videos" className="mt-0">
+                <Card className="border-gray-100 shadow-sm bg-white">
+                  <CardHeader>
+                    <CardTitle>Videos</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {location.videos && location.videos.length > 0 ? (
+                      <div className="space-y-8">
+                        {location.videos.map((video) => (
+                          <div key={video.id} className="border border-gray-100 rounded-lg overflow-hidden">
+                            <div className="aspect-video w-full bg-gray-900">
+                              <iframe 
+                                src={getVideoEmbedUrl(video.url)} 
+                                allowFullScreen 
+                                className="w-full h-full"
+                                title={video.title}
+                              ></iframe>
+                            </div>
+                            <div className="p-4">
+                              <h3 className="text-lg font-medium text-gray-900">{video.title}</h3>
+                              {video.description && (
+                                <p className="text-gray-600 mt-1">{video.description}</p>
+                              )}
+                              <div className="flex items-center justify-between mt-3">
+                                <div className="flex items-center">
+                                  <Avatar className="h-8 w-8 mr-2">
+                                    <AvatarImage src={video.uploadedBy.image || ''} />
+                                    <AvatarFallback className="bg-green-100 text-green-700">
+                                      {video.uploadedBy.name?.charAt(0) || 'U'}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-sm text-gray-600">{video.uploadedBy.name || 'Anonym'}</span>
+                                </div>
+                                {video.duration && (
+                                  <Badge variant="outline" className="ml-2">
+                                    {formatDuration(video.duration)}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 text-gray-500 mb-4">
+                          <Video className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-xl font-medium text-gray-900 mb-2">Keine Videos</h3>
+                        <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                          Für diese Location wurden noch keine Videos hochgeladen.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
+              {/* Pricing Tab */}
+              <TabsContent value="pricing" className="mt-0">
+                <Card className="border-gray-100 shadow-sm bg-white">
+                  <CardHeader>
+                    <CardTitle>Preise</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {location.prices && location.prices.length > 0 ? (
+                      <div className="divide-y divide-gray-100">
+                        {location.prices.map((price) => (
+                          <div key={price.id} className="py-4 first:pt-0 last:pb-0">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <h3 className="text-lg font-medium text-gray-900">{price.name}</h3>
+                                {price.description && (
+                                  <p className="text-gray-600 text-sm mt-1">{price.description}</p>
+                                )}
+                                <div className="flex items-center mt-1 text-sm text-gray-500">
+                                  {price.isRecurring && (
+                                    <Badge className="mr-2 bg-blue-100 text-blue-700 hover:bg-blue-200 border-transparent">
+                                      {price.period === 'month' ? 'Monatlich' : 
+                                       price.period === 'year' ? 'Jährlich' :
+                                       price.period === 'week' ? 'Wöchentlich' :
+                                       price.period === 'day' ? 'Täglich' : 'Wiederkehrend'}
+                                    </Badge>
+                                  )}
+                                  {!price.isRecurring && price.period && (
+                                    <Badge className="mr-2 bg-purple-100 text-purple-700 hover:bg-purple-200 border-transparent">
+                                      {price.period === 'month' ? 'Monatspass' : 
+                                       price.period === 'year' ? 'Jahrespass' :
+                                       price.period === 'week' ? 'Wochenpass' :
+                                       price.period === 'day' ? 'Tagespass' : price.period}
+                                    </Badge>
+                                  )}
+                                  {!price.isRecurring && !price.period && (
+                                    <Badge className="mr-2 bg-green-100 text-green-700 hover:bg-green-200 border-transparent">
+                                      Einmalig
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-2xl font-bold text-gray-900">
+                                  {price.amount.toFixed(2)} {price.currency}
+                                </span>
+                                {price.period && (
+                                  <span className="text-gray-500 text-sm ml-1">
+                                    {price.isRecurring ? '/' : ''}{price.period === 'month' ? 'Monat' : 
+                                      price.period === 'year' ? 'Jahr' :
+                                      price.period === 'week' ? 'Woche' :
+                                      price.period === 'day' ? 'Tag' : price.period}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 text-gray-500 mb-4">
+                          <Euro className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-xl font-medium text-gray-900 mb-2">Keine Preisinformationen</h3>
+                        <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                          Für diese Location wurden noch keine Preise hinterlegt.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
+              {/* Staff Tab */}
+              <TabsContent value="staff" className="mt-0">
+                <Card className="border-gray-100 shadow-sm bg-white">
+                  <CardHeader>
+                    <CardTitle>Team</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {location.staff && location.staff.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {location.staff.map((member) => (
+                          <div key={member.id} className="flex border border-gray-100 rounded-lg overflow-hidden">
+                            <div className="w-1/3 bg-gray-100">
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Avatar className="h-20 w-20">
+                                  <AvatarImage src={member.user.image || ''} className="object-cover" />
+                                  <AvatarFallback className="bg-green-100 text-green-700 text-2xl">
+                                    {member.user.name?.charAt(0) || 'T'}
+                                  </AvatarFallback>
+                                </Avatar>
+                              </div>
+                            </div>
+                            <div className="w-2/3 p-4">
+                              <Badge className="mb-2 capitalize">
+                                {member.role === 'owner' ? 'Besitzer' : 
+                                 member.role === 'manager' ? 'Manager' :
+                                 member.role === 'instructor' ? 'Trainer' : member.role}
+                              </Badge>
+                              <h3 className="text-lg font-medium text-gray-900">{member.user.name || 'Teammitglied'}</h3>
+                              {member.title && (
+                                <p className="text-gray-600 text-sm">{member.title}</p>
+                              )}
+                              {member.specialties && member.specialties.length > 0 && (
+                                <div className="mt-2">
+                                  <p className="text-sm font-medium text-gray-700">Spezialisierung:</p>
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {member.specialties.map((specialty, index) => (
+                                      <Badge key={index} variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                        {specialty}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {member.yearsExperience && (
+                                <p className="text-sm text-gray-600 mt-2">
+                                  {member.yearsExperience} Jahre Erfahrung
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 text-gray-500 mb-4">
+                          <UserCircle2 className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-xl font-medium text-gray-900 mb-2">Keine Teammitglieder</h3>
+                        <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                          Für diese Location wurden noch keine Teammitglieder hinterlegt.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
               {/* Map Tab */}
               <TabsContent value="map" className="mt-0">
                 <Card className="border-gray-100 shadow-sm bg-white overflow-hidden">
@@ -529,7 +968,7 @@ export default function LocationDetailClient({
                               <div>
                                 <p className="font-medium">{review.user.name || 'Anonym'}</p>
                                 <p className="text-sm text-gray-500">
-                                  {formatDistanceToNow(new Date(review.createdAt), { addSuffix: true, locale: de })}
+                                  {formatDistanceToNow(new Date(review.createdAt), { locale: de })}
                                 </p>
                               </div>
                             </div>
@@ -663,7 +1102,7 @@ export default function LocationDetailClient({
                   <div>
                     <p className="font-medium">{location.addedBy.name || 'Anonym'}</p>
                     <p className="text-sm text-gray-500">
-                      {formatDistanceToNow(new Date(location.createdAt), { addSuffix: true, locale: de })}
+                      {formatDistanceToNow(new Date(location.createdAt), { locale: de })}
                     </p>
                   </div>
                 </div>
@@ -744,6 +1183,46 @@ export default function LocationDetailClient({
                 </Button>
               </CardContent>
             </Card>
+            
+            {/* Amenities summary in sidebar */}
+            {location.amenities && location.amenities.length > 0 && (
+              <Card className="border-gray-100 shadow-sm bg-white">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Ausstattung</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {location.amenities
+                      .filter(amenity => amenity.isAvailable)
+                      .slice(0, 6)
+                      .map((amenity) => (
+                        <Badge key={amenity.id} className="bg-green-50 text-green-700 border-none flex items-center gap-1.5 py-1.5 px-2.5">
+                          {getAmenityIcon(amenity.type)}
+                          <span>{getAmenityName(amenity.type)}</span>
+                        </Badge>
+                      ))}
+                    {location.amenities.filter(a => a.isAvailable).length > 6 && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setActiveTab('amenities')}
+                        className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                      >
+                        +{location.amenities.filter(a => a.isAvailable).length - 6} mehr
+                      </Button>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveTab('amenities')}
+                    className="w-full mt-4"
+                  >
+                    Alle Details anzeigen
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

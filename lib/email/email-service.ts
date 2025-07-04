@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
-import { prisma } from '@/lib/prisma';
+import prisma from '@/lib/prisma';
 import { Event, User, Group } from '@prisma/client';
 import { format } from 'date-fns';
 

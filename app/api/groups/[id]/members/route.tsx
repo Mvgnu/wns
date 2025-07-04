@@ -1,9 +1,8 @@
-export const dynamic = "force-static";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 
 // Define Group type with isPrivate
 type Group = {
@@ -26,27 +25,24 @@ const memberOperationSchema = z.object({
   userId: z.string().optional(), // Required for 'remove' operation
 });
 
-// GET handler to check if a user is a member of the group
+// GET handler to fetch members of a group
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const userId = session.user.id;
+    const userId = session?.user?.id;
     const groupId = params.id;
 
     // Check if the group exists
     const group = await prisma.group.findUnique({
       where: { id: groupId },
-      select: { id: true },
+      select: { 
+        id: true,
+        ownerId: true,
+        isPrivate: true,
+      },
     });
 
     if (!group) {
@@ -56,23 +52,107 @@ export async function GET(
       );
     }
 
-    // Check if the user is a member
-    const membership = await prisma.group.findFirst({
+    // Check if the user is an admin of the group
+    let isUserAdmin = false;
+    if (userId) {
+      const admin = await prisma.groupAdmin.findFirst({
+        where: {
+          groupId,
+          userId,
+        },
+      });
+      isUserAdmin = !!admin || group.ownerId === userId;
+    }
+
+    // If the group is private and the user is not a member, return error
+    if (group.isPrivate && userId) {
+      const isMember = await prisma.group.findFirst({
+        where: {
+          id: groupId,
+          OR: [
+            { ownerId: userId },
+            { members: { some: { id: userId } } },
+          ],
+        },
+      });
+
+      if (!isMember) {
+        return NextResponse.json(
+          { error: "You do not have permission to view members of this private group" },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Fetch members with their roles and status
+    const members = await prisma.user.findMany({
       where: {
-        id: groupId,
-        members: {
-          some: {
-            id: userId,
+        OR: [
+          { id: group.ownerId },
+          { memberGroups: { some: { id: groupId } } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        image: true,
+        email: true,
+        groupMemberStatuses: {
+          where: { groupId },
+          select: {
+            status: true,
+            isAnonymous: true,
+          },
+        },
+        groupMemberRoles: {
+          where: { groupId },
+          select: {
+            role: {
+              select: {
+                id: true,
+                name: true,
+                permissions: true,
+              },
+            },
           },
         },
       },
     });
 
-    return NextResponse.json({ isMember: !!membership });
+    // Check if user is admin/owner to determine what information to show
+    const isRequesterAdminOrOwner = isUserAdmin || group.ownerId === userId;
+
+    // Process member data to include roles and respect anonymity
+    const processedMembers = members.map(member => {
+      const status = member.groupMemberStatuses[0];
+      const isAnonymous = status?.isAnonymous || false;
+      const isOwner = member.id === group.ownerId;
+      
+      // For anonymous members: hide personal details unless the requester is admin/owner
+      // or the member is viewing their own profile
+      const shouldHideDetails = isAnonymous && 
+                               !isRequesterAdminOrOwner && 
+                               member.id !== userId;
+      
+      // Everyone can see the owner's details
+      const finalHideDetails = isOwner ? false : shouldHideDetails;
+
+      return {
+        id: member.id,
+        name: finalHideDetails ? null : member.name,
+        image: finalHideDetails ? null : member.image,
+        email: isRequesterAdminOrOwner ? member.email : null, // Only admins see emails
+        isAnonymous: isAnonymous,
+        isOwner: isOwner,
+        role: member.groupMemberRoles[0]?.role?.name || (isOwner ? "owner" : "member"),
+      };
+    });
+
+    return NextResponse.json({ members: processedMembers });
   } catch (error) {
-    console.error("Error checking membership:", error);
+    console.error("Error fetching members:", error);
     return NextResponse.json(
-      { error: "Failed to check membership" },
+      { error: "Failed to fetch members" },
       { status: 500 }
     );
   }
@@ -94,6 +174,10 @@ export async function POST(
 
     const userId = session.user.id;
     const groupId = params.id;
+    
+    // Parse request body to get isAnonymous flag
+    const body = await req.json().catch(() => ({}));
+    const isAnonymous = !!body.isAnonymous;
 
     // Check if the group exists
     const group = await prisma.group.findUnique({
@@ -135,17 +219,49 @@ export async function POST(
       );
     }
 
-    // Add user to the group
-    await prisma.group.update({
-      where: { id: groupId },
-      data: {
-        members: {
-          connect: { id: userId },
+    // Add user to the group and create/update the member status
+    await prisma.$transaction([
+      // Add user to the group
+      prisma.group.update({
+        where: { id: groupId },
+        data: {
+          members: {
+            connect: { id: userId },
+          },
+          memberCount: {
+            increment: 1
+          }
         },
-      },
-    });
+      }),
+      
+      // Create or update member status with anonymous flag
+      prisma.groupMemberStatus.upsert({
+        where: {
+          groupId_userId: {
+            groupId,
+            userId
+          }
+        },
+        create: {
+          groupId,
+          userId,
+          status: "active",
+          joinedAt: new Date(),
+          isAnonymous: isAnonymous
+        },
+        update: {
+          status: "active",
+          joinedAt: new Date(),
+          isAnonymous: isAnonymous
+        }
+      })
+    ]);
 
-    return NextResponse.json({ success: true, isMember: true });
+    return NextResponse.json({ 
+      success: true, 
+      isMember: true,
+      isAnonymous: isAnonymous
+    });
   } catch (error) {
     console.error("Error joining group:", error);
     return NextResponse.json(

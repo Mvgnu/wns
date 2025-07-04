@@ -1,9 +1,8 @@
-export const dynamic = "force-static";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { sendNotificationToUser } from "@/lib/notificationService";
 import crypto from "crypto";
 

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Check, X, Info } from "lucide-react";
 
 export default function SignUp() {
   const router = useRouter();
@@ -16,17 +18,134 @@ export default function SignUp() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Password strength state
+  const [passwordStrength, setPasswordStrength] = useState(0);
+  const [passwordFeedback, setPasswordFeedback] = useState("");
+  
+  // Error states for each field
+  const [nameError, setNameError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
+  
+  // Password validation criteria
+  const [hasMinLength, setHasMinLength] = useState(false);
+  const [hasUppercase, setHasUppercase] = useState(false);
+  const [hasLowercase, setHasLowercase] = useState(false);
+  const [hasNumber, setHasNumber] = useState(false);
+  const [passwordsMatch, setPasswordsMatch] = useState(false);
+
+  // Validate name
+  const validateName = (value: string) => {
+    if (value.length < 2) {
+      setNameError("Name muss mindestens 2 Zeichen lang sein");
+      return false;
+    }
+    setNameError("");
+    return true;
+  };
+
+  // Validate email
+  const validateEmail = (value: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value)) {
+      setEmailError("Bitte gib eine gültige E-Mail-Adresse ein");
+      return false;
+    }
+    setEmailError("");
+    return true;
+  };
+
+  // Monitor password strength and validate
+  useEffect(() => {
+    if (password) {
+      // Check criteria
+      const minLength = password.length >= 8;
+      const uppercase = /[A-Z]/.test(password);
+      const lowercase = /[a-z]/.test(password);
+      const number = /[0-9]/.test(password);
+      const matches = password === confirmPassword && password !== "";
+      
+      // Update state for criteria
+      setHasMinLength(minLength);
+      setHasUppercase(uppercase);
+      setHasLowercase(lowercase);
+      setHasNumber(number);
+      setPasswordsMatch(matches);
+      
+      // Calculate strength (0-100)
+      let strength = 0;
+      if (minLength) strength += 25;
+      if (uppercase) strength += 25;
+      if (lowercase) strength += 25;
+      if (number) strength += 25;
+      
+      setPasswordStrength(strength);
+      
+      // Set feedback based on strength
+      if (strength < 50) {
+        setPasswordFeedback("Schwaches Passwort");
+      } else if (strength < 100) {
+        setPasswordFeedback("Mittleres Passwort");
+      } else {
+        setPasswordFeedback("Starkes Passwort");
+      }
+      
+      // Set error if criteria aren't met
+      if (password.length > 0 && (!minLength || !uppercase || !lowercase || !number)) {
+        setPasswordError("Passwort erfüllt nicht alle Kriterien");
+      } else {
+        setPasswordError("");
+      }
+    } else {
+      setPasswordStrength(0);
+      setPasswordFeedback("");
+      setPasswordError("");
+      
+      // Reset criteria
+      setHasMinLength(false);
+      setHasUppercase(false);
+      setHasLowercase(false);
+      setHasNumber(false);
+    }
+    
+    // Check if passwords match
+    if (confirmPassword && password !== confirmPassword) {
+      setConfirmPasswordError("Passwörter stimmen nicht überein");
+    } else {
+      setConfirmPasswordError("");
+    }
+  }, [password, confirmPassword]);
+
+  const validateForm = () => {
+    const isNameValid = validateName(name);
+    const isEmailValid = validateEmail(email);
+    const isPasswordValid = 
+      hasMinLength && hasUppercase && hasLowercase && hasNumber;
+    const doPasswordsMatch = password === confirmPassword;
+    
+    if (!isPasswordValid) {
+      setPasswordError("Passwort erfüllt nicht alle Kriterien");
+    }
+    
+    if (!doPasswordsMatch) {
+      setConfirmPasswordError("Passwörter stimmen nicht überein");
+    }
+    
+    return isNameValid && isEmailValid && isPasswordValid && doPasswordsMatch;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setError("");
-
-    if (password !== confirmPassword) {
-      setError("Die Passwörter stimmen nicht überein");
-      setIsLoading(false);
+    
+    // Validate form before submission
+    if (!validateForm()) {
       return;
     }
+    
+    setIsLoading(true);
 
     try {
       // Register the user
@@ -38,20 +157,41 @@ export default function SignUp() {
         body: JSON.stringify({ name, email, password }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Registrierung fehlgeschlagen");
+        if (response.status === 400 && data.errors) {
+          // Format validation errors from server
+          const serverErrors = data.errors.map((err: any) => err.message).join(", ");
+          throw new Error(serverErrors || data.message || "Ungültige Eingaben");
+        } else if (response.status === 409) {
+          throw new Error("Diese E-Mail-Adresse wird bereits verwendet");
+        } else {
+          throw new Error(data.message || "Registrierung fehlgeschlagen");
+        }
       }
 
       // Sign in the user after successful registration
-      await signIn("credentials", {
+      const signInResult = await signIn("credentials", {
         redirect: false,
         email,
         password,
+        callbackUrl: "/"
       });
 
-      router.push("/");
-      router.refresh();
+      if (signInResult?.error) {
+        console.error("SignIn Error:", signInResult.error);
+        throw new Error(`Anmeldung nach Registrierung fehlgeschlagen: ${signInResult.error}`);
+      }
+
+      // Use window.location for a more reliable redirect that forces a full page reload
+      if (signInResult?.url) {
+        window.location.href = signInResult.url;
+      } else {
+        // Fallback to router if no URL is returned
+        router.push("/");
+        router.refresh();
+      }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error 
         ? error.message 
@@ -67,16 +207,17 @@ export default function SignUp() {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold">Konto erstellen</CardTitle>
           <CardDescription>
-            Gib deine Informationen ein, um ein Konto zu erstellen
+            Gib deine Daten ein, um ein neues Konto zu erstellen
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="bg-red-50 text-red-500 px-4 py-2 rounded-md text-sm">
+              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
                 {error}
               </div>
             )}
+            
             <div className="space-y-2">
               <label htmlFor="name" className="text-sm font-medium">
                 Name
@@ -84,12 +225,18 @@ export default function SignUp() {
               <Input
                 id="name"
                 type="text"
-                placeholder="Max Mustermann"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (e.target.value) validateName(e.target.value);
+                }}
+                placeholder="Vor- und Nachname"
                 required
+                className={nameError ? "border-red-500" : ""}
               />
+              {nameError && <p className="text-xs text-red-500">{nameError}</p>}
             </div>
+            
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium">
                 E-Mail
@@ -97,12 +244,18 @@ export default function SignUp() {
               <Input
                 id="email"
                 type="email"
-                placeholder="name@beispiel.de"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (e.target.value) validateEmail(e.target.value);
+                }}
+                placeholder="name@beispiel.de"
                 required
+                className={emailError ? "border-red-500" : ""}
               />
+              {emailError && <p className="text-xs text-red-500">{emailError}</p>}
             </div>
+            
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium">
                 Passwort
@@ -110,29 +263,70 @@ export default function SignUp() {
               <Input
                 id="password"
                 type="password"
-                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
                 required
+                className={passwordError ? "border-red-500" : ""}
               />
+              
+              {password && (
+                <>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs">{passwordFeedback}</span>
+                      <span className="text-xs">{passwordStrength}%</span>
+                    </div>
+                    <Progress value={passwordStrength} className="h-1" />
+                  </div>
+                  
+                  <div className="space-y-2 mt-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      {hasMinLength ? <Check size={14} className="text-green-500" /> : <X size={14} className="text-red-500" />}
+                      <span>Mindestens 8 Zeichen</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {hasUppercase ? <Check size={14} className="text-green-500" /> : <X size={14} className="text-red-500" />}
+                      <span>Mindestens ein Großbuchstabe</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {hasLowercase ? <Check size={14} className="text-green-500" /> : <X size={14} className="text-red-500" />}
+                      <span>Mindestens ein Kleinbuchstabe</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {hasNumber ? <Check size={14} className="text-green-500" /> : <X size={14} className="text-red-500" />}
+                      <span>Mindestens eine Zahl</span>
+                    </div>
+                  </div>
+                </>
+              )}
+              
+              {passwordError && <p className="text-xs text-red-500">{passwordError}</p>}
             </div>
+            
             <div className="space-y-2">
-              <label htmlFor="confirmPassword" className="text-sm font-medium">
+              <label htmlFor="confirm-password" className="text-sm font-medium">
                 Passwort bestätigen
               </label>
               <Input
-                id="confirmPassword"
+                id="confirm-password"
                 type="password"
-                placeholder="••••••••"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
                 required
+                className={confirmPasswordError ? "border-red-500" : ""}
               />
+              {confirmPasswordError && (
+                <p className="text-xs text-red-500">{confirmPasswordError}</p>
+              )}
             </div>
+            
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Konto wird erstellt..." : "Registrieren"}
+              {isLoading ? "Registrierung läuft..." : "Registrieren"}
             </Button>
           </form>
+          
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200"></div>
@@ -141,6 +335,7 @@ export default function SignUp() {
               <span className="px-2 bg-white text-gray-500">Oder fortfahren mit</span>
             </div>
           </div>
+          
           <Button
             variant="outline"
             className="w-full"

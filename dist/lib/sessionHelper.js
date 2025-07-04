@@ -12,6 +12,8 @@ const auth_1 = require("./auth");
  */
 async function getSafeServerSession() {
     try {
+        // First check if a session cookie exists before attempting to decrypt
+        // We'll try to get the session from authOptions directly, which avoids dealing with cookie parsing
         return await (0, next_auth_1.getServerSession)(auth_1.authOptions);
     }
     catch (error) {

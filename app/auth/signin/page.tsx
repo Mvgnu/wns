@@ -25,19 +25,25 @@ export default function SignIn() {
         redirect: false,
         email,
         password,
+        callbackUrl: "/"
       });
 
       if (result?.error) {
-        setError("Ungültige E-Mail oder Passwort");
+        console.error("Login error:", result.error);
+        setError("Anmeldung fehlgeschlagen: " + result.error);
         setIsLoading(false);
         return;
       }
 
-      router.push("/");
-      router.refresh();
+      if (result?.url) {
+        window.location.href = result.url;
+      } else {
+        router.push("/");
+        router.refresh();
+      }
     } catch (error) {
-      console.error("Anmeldefehler:", error);
-      setError("Ein Fehler ist aufgetreten. Bitte versuche es erneut.");
+      console.error("Login error:", error);
+      setError("Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut.");
       setIsLoading(false);
     }
   };

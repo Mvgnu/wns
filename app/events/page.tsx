@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { prisma } from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -73,28 +73,41 @@ type SportCountResult = {
 };
 
 // Helper function to get a human-readable description of the timeframe
-function timeframeDisplay(timeframe?: string): string {
-  if (!timeframe) return "Alle Veranstaltungen";
-  const timeframeMap: Record<string, string> = {
-    today: "Heute",
-    tomorrow: "Morgen",
-    thisWeek: "Diese Woche",
-    thisMonth: "Diesen Monat",
-    future: "Zukünftige Veranstaltungen"
-  };
-  return timeframeMap[timeframe] || "Veranstaltungen";
+function timeframeDisplay(timeframe: string): string {
+  switch (timeframe) {
+    case 'today':
+      return 'Heute';
+    case 'tomorrow':
+      return 'Morgen';
+    case 'thisWeek':
+      return 'Diese Woche';
+    case 'thisMonth':
+      return 'Diesen Monat';
+    case 'future':
+      return 'Zukünftige Veranstaltungen';
+    default:
+      return 'Alle Veranstaltungen';
+  }
 }
 
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: { sport?: string; sports?: string; timeframe?: string; search?: string };
+  searchParams: { 
+    sport?: string; 
+    sports?: string; 
+    timeframe?: string; 
+    search?: string;
+    isPaid?: string;
+    joinRestriction?: string;
+    isRecurring?: string;
+    priceRange?: string;
+  };
 }) {
   const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
   
   // Get unique sports for filters
-  // We'll only count sports from public groups and private groups the user is a member of
   let sportCounts: SportCountResult[] = [];
   
   if (userId) {
@@ -234,6 +247,40 @@ export default async function EventsPage({
       { location: { name: { contains: searchTerm, mode: 'insensitive' } } },
     ];
   }
+
+  // Add paid events filter
+  if (searchParams.isPaid === 'true') {
+    where.isPaid = true;
+  }
+
+  // Add access restriction filter
+  if (searchParams.joinRestriction) {
+    where.joinRestriction = searchParams.joinRestriction;
+  }
+
+  // Add recurring events filter
+  if (searchParams.isRecurring === 'true') {
+    where.isRecurring = true;
+  }
+
+  // Add price range filter
+  if (searchParams.priceRange) {
+    const [min, max] = searchParams.priceRange.split('-').map(Number);
+    if (max) {
+      where.price = {
+        gte: min * 100, // Convert to cents
+        lte: max * 100
+      };
+    } else if (searchParams.priceRange === '50+') {
+      where.price = {
+        gte: 5000 // 50€ in cents
+      };
+    } else {
+      where.price = {
+        lte: min * 100
+      };
+    }
+  }
   
   // Add private group filter to show only accessible events
   where.OR = [
@@ -279,7 +326,19 @@ export default async function EventsPage({
       _count: {
         select: {
           attendees: true,
+          pricingTiers: true,
+          discountCodes: true,
         },
+      },
+      pricingTiers: {
+        where: {
+          isActive: true
+        },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+        }
       },
     },
     orderBy: {
@@ -302,6 +361,14 @@ export default async function EventsPage({
 
   // Get filter description for display
   const filterDescription = timeframeDisplay(currentTimeframe);
+
+  // Prepare current filters
+  const currentFilters = {
+    isPaid: searchParams.isPaid === 'true',
+    joinRestriction: searchParams.joinRestriction || 'all',
+    isRecurring: searchParams.isRecurring === 'true',
+    priceRange: searchParams.priceRange || 'all'
+  };
 
   // Prepare sports categories for filter
   const sportsByCategory = getSportsByCategory();
@@ -419,11 +486,15 @@ export default async function EventsPage({
                       name="search"
                       placeholder="Suchen..."
                       className="pl-9 py-2 text-sm w-full"
-                      defaultValue={searchParams.search || ''}
+                      defaultValue={searchParams?.search || ''}
                     />
                     {/* Preserve existing filters */}
-                    {searchParams.sports && <input type="hidden" name="sports" value={searchParams.sports} />}
-                    {searchParams.timeframe && <input type="hidden" name="timeframe" value={searchParams.timeframe} />}
+                    {searchParams?.sports && <input type="hidden" name="sports" value={searchParams.sports} />}
+                    {searchParams?.timeframe && <input type="hidden" name="timeframe" value={searchParams.timeframe} />}
+                    {searchParams?.isPaid && <input type="hidden" name="isPaid" value={searchParams.isPaid} />}
+                    {searchParams?.joinRestriction && <input type="hidden" name="joinRestriction" value={searchParams.joinRestriction} />}
+                    {searchParams?.isRecurring && <input type="hidden" name="isRecurring" value={searchParams.isRecurring} />}
+                    {searchParams?.priceRange && <input type="hidden" name="priceRange" value={searchParams.priceRange} />}
                   </form>
                 </div>
                 
@@ -432,6 +503,7 @@ export default async function EventsPage({
                   selectedSports={selectedSportsArray}
                   currentSport={currentSportValue}
                   currentTimeframe={currentTimeframe}
+                  currentFilters={currentFilters}
                 />
                 
                 {/* Custom Sport Category MultiSelect */}
@@ -594,19 +666,32 @@ export default async function EventsPage({
                     </Badge>
                   )}
                   
-                  {searchParams.sports && searchParams.sports.split(',').map(sport => (
-                    <Badge key={sport} variant="outline" className="bg-white border-blue-200 text-blue-700 gap-1 hover:bg-blue-100">
-                      {allSports.find(s => s.value === sport)?.label || sport}
-                      <Link href={`/events?${new URLSearchParams({ 
-                        ...Object.fromEntries(Object.entries(searchParams).filter(([key]) => key !== 'sports')),
-                        ...(searchParams.sports?.split(',').filter(s => s !== sport).length > 0 
-                          ? { sports: searchParams.sports.split(',').filter(s => s !== sport).join(',') } 
-                          : {})
-                      })}`}>
-                        <span className="pl-1 hover:text-blue-900">×</span>
-                      </Link>
-                    </Badge>
-                  ))}
+                  {searchParams.sports && searchParams.sports.split(',').map(sport => {
+                    // Safely extract the sports array
+                    const sportsArray = searchParams.sports ? searchParams.sports.split(',') : [];
+                    
+                    // Prepare new sports array without current sport
+                    const remainingSports = sportsArray.filter(s => s !== sport);
+                    
+                    // Create URL params object
+                    const urlParams = { 
+                      ...Object.fromEntries(Object.entries(searchParams).filter(([key]) => key !== 'sports'))
+                    };
+                    
+                    // Add remaining sports if any
+                    if (remainingSports.length > 0) {
+                      urlParams.sports = remainingSports.join(',');
+                    }
+                    
+                    return (
+                      <Badge key={sport} variant="outline" className="bg-white border-blue-200 text-blue-700 gap-1 hover:bg-blue-100">
+                        {allSports.find(s => s.value === sport)?.label || sport}
+                        <Link href={`/events?${new URLSearchParams(urlParams)}`}>
+                          <span className="pl-1 hover:text-blue-900">×</span>
+                        </Link>
+                      </Badge>
+                    );
+                  })}
                   
                   <Link 
                     href="/events"

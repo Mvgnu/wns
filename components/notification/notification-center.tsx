@@ -49,10 +49,7 @@ export function NotificationCenter() {
       
       const data = await response.json();
       setNotifications(data.notifications);
-      
-      // Count unread notifications
-      const unread = data.notifications.filter((n: Notification) => !n.read).length;
-      setUnreadCount(unread);
+      setUnreadCount(data.unreadCount);
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -62,8 +59,12 @@ export function NotificationCenter() {
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      const response = await fetch(`/api/notifications/${notificationId}/read`, {
-        method: 'PUT',
+      const response = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: notificationId }),
       });
       
       if (!response.ok) throw new Error('Failed to mark notification as read');
@@ -84,8 +85,12 @@ export function NotificationCenter() {
 
   const handleMarkAllAsRead = async () => {
     try {
-      const response = await fetch('/api/notifications/read-all', {
-        method: 'PUT',
+      const response = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ all: true }),
       });
       
       if (!response.ok) throw new Error('Failed to mark all notifications as read');
@@ -197,7 +202,7 @@ export function NotificationCenter() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">{notification.message}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {formatDistanceToNow(notification.createdAt, { addSuffix: true })}
+                        {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
                       </p>
                     </div>
                   </div>

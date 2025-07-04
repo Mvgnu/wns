@@ -1,9 +1,12 @@
 "use strict";
 'use server';
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getHomePageData = getHomePageData;
 // ^ Ensure server-side execution
-const prisma_1 = require("./prisma");
+const prisma_1 = __importDefault(require("./prisma"));
 const sportsData_1 = require("./sportsData");
 const next_1 = require("next-auth/next");
 const auth_1 = require("@/lib/auth");
@@ -22,13 +25,13 @@ async function getHomePageData() {
         // Fetch important stats - only count public entities for non-logged in users
         const statsPromises = [
             // For groups, only count public ones for non-logged in users
-            prisma_1.prisma.group.count({
+            prisma_1.default.group.count({
                 where: userId ? undefined : { isPrivate: false }
             }),
             // For locations, all are public
-            prisma_1.prisma.location.count(),
+            prisma_1.default.location.count(),
             // For users, all user counts are public
-            prisma_1.prisma.user.count()
+            prisma_1.default.user.count()
         ];
         const [groupsCount, locationsCount, usersCount] = await Promise.all(statsPromises);
         // Get most popular groups for each sport category
@@ -68,7 +71,7 @@ async function getHomePageData() {
                         };
                     }
                     // Get most popular group for this specific sport
-                    const topGroup = await prisma_1.prisma.group.findFirst({
+                    const topGroup = await prisma_1.default.group.findFirst({
                         where: groupWhereInput,
                         orderBy: {
                             members: {
@@ -93,7 +96,7 @@ async function getHomePageData() {
                         take: 1
                     });
                     // Get upcoming event for this specific sport
-                    const upcomingEvent = await prisma_1.prisma.event.findFirst({
+                    const upcomingEvent = await prisma_1.default.event.findFirst({
                         where: {
                             group: groupWhereInput,
                             startTime: {

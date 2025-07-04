@@ -34,6 +34,11 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
 import { CustomDatePicker } from "@/components/ui/custom-date-picker";
+import { EventPricing } from "@/components/events/EventPricing";
+import { EventAmenities } from "@/components/events/EventAmenities";
+import { EventCoOrganizers } from "@/components/events/EventCoOrganizers";
+import { Separator } from "@/components/ui/separator";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 // Define the form schema with Zod
 const formSchema = z.object({
@@ -58,6 +63,24 @@ const formSchema = z.object({
   monthlyWeekdayDay: z.enum(["0", "1", "2", "3", "4", "5", "6"]).optional(),
   // Who can join the event
   joinRestriction: z.enum(["everyone", "groupOnly"]).default("everyone"),
+  // New fields for event pricing
+  isPaid: z.boolean().default(false),
+  price: z.number().optional(),
+  priceCurrency: z.string().optional(),
+  priceDescription: z.string().optional(),
+  maxAttendees: z.number().int().positive().optional(),
+  // New field for highlighted amenities
+  highlightedAmenities: z.array(z.string()).optional(),
+  // New field for co-organizers
+  coOrganizers: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string().optional(),
+      email: z.string().optional(),
+      image: z.string().optional(),
+      role: z.string().optional(),
+    })
+  ).optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -91,6 +114,14 @@ interface EventFormProps {
     recurringDays?: number[];
     recurringEndDate?: string;
     joinRestriction?: "everyone" | "groupOnly";
+    // New fields
+    isPaid?: boolean;
+    price?: number;
+    priceCurrency?: string;
+    priceDescription?: string;
+    maxAttendees?: number;
+    highlightedAmenities?: string[];
+    // Co-organizers will be fetched separately
   };
   isEditing?: boolean;
   groups?: Array<{
@@ -168,6 +199,11 @@ export default function EventForm({
       recurringDays: initialRecurringDays,
       recurringEndDate: initialData?.recurringEndDate || "",
       joinRestriction: initialData?.joinRestriction as "everyone" | "groupOnly" || "everyone",
+      isPaid: initialData?.isPaid || false,
+      price: initialData?.price,
+      priceCurrency: initialData?.priceCurrency || 'EUR',
+      priceDescription: initialData?.priceDescription || '',
+      maxAttendees: initialData?.maxAttendees,
     },
   });
   
@@ -237,175 +273,76 @@ export default function EventForm({
     }
   };
 
-  // Handle form submission
-  const onSubmit = async (values: FormValues) => {
-    try {
-      // Add the image from the state if available
-      if (images.length > 0) {
-        // Always use the first image from the images array
-        values.image = images[0];
-        console.log("Setting image URL:", values.image);
-      } else {
-        // Make sure image is undefined, not an empty string
-        values.image = undefined;
-      }
-      
-      // Process recurring event data
-      const isRecurring = values.eventType === "recurring";
-      
-      // For recurring events, ensure we have the necessary data
-      if (isRecurring) {
-        if (!values.recurringPattern) {
-          // Default to weekly if not specified
-          values.recurringPattern = "weekly";
-        }
-        
-        // Ensure recurring days is an array
-        if (!values.recurringDays || !Array.isArray(values.recurringDays)) {
-          values.recurringDays = [];
-        }
+  // Initialize pricing data with correct types
+  const [pricingData, setPricingData] = useState<{
+    isPaid: boolean;
+    price?: number;
+    priceCurrency: string;
+    priceDescription: string;
+    maxAttendees?: number;
+  }>({
+    isPaid: initialData?.isPaid || false,
+    price: initialData?.price,
+    priceCurrency: initialData?.priceCurrency || 'EUR',
+    priceDescription: initialData?.priceDescription || '',
+    maxAttendees: initialData?.maxAttendees
+  });
 
-        // For recurring events, we don't use the startTime/endTime as individual event times
-        // but rather as the time of day for each recurring instance
-        if (startDate) {
-          // Create a template time for recurring events (just use the time part)
-          const hours = startDate.getHours();
-          const minutes = startDate.getMinutes();
-          
-          // Create a new date object for today with the same time
-          const templateDate = new Date();
-          templateDate.setHours(hours, minutes, 0, 0);
-          values.startTime = templateDate.toISOString();
-        }
-        
-        if (endDate) {
-          const hours = endDate.getHours();
-          const minutes = endDate.getMinutes();
-          
-          const templateDate = new Date();
-          templateDate.setHours(hours, minutes, 0, 0);
-          values.endTime = templateDate.toISOString();
-        }
-
-        // Make sure the recurring end date is set if available
-        if (recurringEndDate) {
-          values.recurringEndDate = recurringEndDate.toISOString();
-        }
-      } else {
-        // For one-time events, use the specific dates selected
-        // These should already be set correctly from the date picker
-        if (startDate) {
-          values.startTime = startDate.toISOString();
-        }
-        if (endDate) {
-          values.endTime = endDate.toISOString();
-        }
-      }
-      
-      // Handle 'none' values for locationId and groupId
-      if (values.locationId === "none") {
-        values.locationId = undefined;
-      }
-      
-      if (values.groupId === "none") {
-        values.groupId = undefined;
-      }
-      
-      // Prepare data for API
-      const eventData = {
-        ...values,
-        isRecurring,
-      };
-      
-      console.log("Creating event with data:", eventData);
-      
-      if (isEditing && initialData) {
-        // Update existing event
-        updateEvent.mutate({
-          id: initialData.id,
-          data: eventData,
-        }, {
-          onSuccess: () => {
-            router.push(`/events/${initialData.id}`);
-          },
-          onError: (error) => {
-            console.error("Error updating event:", error);
-            toast({
-              title: "Fehler",
-              description: `Fehler beim Aktualisieren: ${error.message}`,
-              variant: "destructive",
-            });
-          }
-        });
-      } else {
-        // Create new event
-        createEvent.mutate(eventData as any, {
-          onSuccess: (newEvent) => {
-            // Ensure we have a valid ID before redirecting
-            if (newEvent && newEvent.id) {
-              router.push(`/events/${newEvent.id}`);
-            } else {
-              console.error("Missing event ID in response:", newEvent);
-              toast({
-                title: "Hinweis",
-                description: "Das Event wurde erstellt, aber die Weiterleitung ist fehlgeschlagen",
-                variant: "default",
-              });
-              router.push('/events');  // Fallback to events list
-            }
-          },
-          onError: (error) => {
-            console.error("Error creating event:", error);
-            toast({
-              title: "Fehler",
-              description: `Fehler beim Erstellen: ${error.message}`,
-              variant: "destructive",
-            });
-          }
-        });
-      }
-    } catch (error) {
-      console.error("Form submission error:", error);
-      toast({
-        title: "Fehler",
-        description: "Ein unerwarteter Fehler ist aufgetreten",
-        variant: "destructive",
-      });
-    }
+  // Handler for pricing data changes
+  const handlePricingChange = (data: {
+    isPaid: boolean;
+    price?: number;
+    priceCurrency?: string;
+    priceDescription?: string;
+    maxAttendees?: number;
+  }) => {
+    setPricingData({
+      isPaid: data.isPaid,
+      price: data.price,
+      priceCurrency: data.priceCurrency || 'EUR',
+      priceDescription: data.priceDescription || '',
+      maxAttendees: data.maxAttendees
+    });
+  };
+  
+  // Handler for amenities changes
+  const handleAmenitiesChange = (amenityIds: string[]) => {
+    setSelectedAmenities(amenityIds);
+  };
+  
+  // Handler for co-organizers changes
+  const handleCoOrganizersChange = (newCoOrganizers: Array<{
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+    role?: string;
+  }>) => {
+    setCoOrganizers(newCoOrganizers);
   };
 
-  // Inside the component function, add these state variables:
-  const [monthlyRecurrenceType, setMonthlyRecurrenceType] = useState<"byDate" | "byWeekday">(
-    initialData?.recurringPattern === "monthly" && initialData?.recurringDays?.length === 2 
-      ? "byWeekday" 
-      : "byDate"
+  // Add new state variables for our enhanced features
+  const [locationAmenities, setLocationAmenities] = useState<Array<{
+    id: string;
+    name: string;
+    icon: string;
+    description?: string;
+  }>>([]);
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>(
+    initialData?.highlightedAmenities || []
   );
-
-  const occurrenceOptions = [
-    { value: "1", label: "Ersten" },
-    { value: "2", label: "Zweiten" },
-    { value: "3", label: "Dritten" },
-    { value: "4", label: "Vierten" },
-  ];
-
-  const [isCustomDatePickerOpen, setIsCustomDatePickerOpen] = useState(false);
-  const [selectedRecurringDates, setSelectedRecurringDates] = useState<Date[]>([]);
-
-  const handleRecurringDatesSelect = (dates: Date[]) => {
-    setSelectedRecurringDates(dates);
-    
-    // Update the form with the selected dates
-    // For monthly recurrence, we store the days of the month
-    if (recurringPattern === "monthly" && monthlyRecurrenceType === "byDate") {
-      const daysOfMonth = dates.map(date => date.getDate());
-      form.setValue("recurringDays", daysOfMonth);
-    }
-  };
+  const [coOrganizers, setCoOrganizers] = useState<Array<{
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+    role?: string;
+  }>>([]);
 
   return (
-    <>
+    <div className="max-w-4xl mx-auto">
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
           <FormField
             control={form.control}
             name="title"
@@ -863,13 +800,58 @@ export default function EventForm({
             />
           </div>
 
-          <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting
-              ? "Wird gespeichert..."
-              : isEditing
-              ? "Event aktualisieren"
-              : "Event erstellen"
-            }
+          {/* Add pricing section */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Event Pricing & Capacity</h3>
+            <Card>
+              <CardContent className="pt-6">
+                <EventPricing
+                  isPaid={pricingData.isPaid}
+                  price={pricingData.price}
+                  priceCurrency={pricingData.priceCurrency}
+                  priceDescription={pricingData.priceDescription}
+                  maxAttendees={pricingData.maxAttendees}
+                  onChange={handlePricingChange}
+                />
+              </CardContent>
+            </Card>
+          </div>
+          
+          {/* Show amenities section only if a location is selected */}
+          {form.watch('locationId') && form.watch('locationId') !== 'none' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Highlight Location Amenities</h3>
+              <Card>
+                <CardContent className="pt-6">
+                  <EventAmenities
+                    locationId={form.watch('locationId')}
+                    locationAmenities={locationAmenities}
+                    highlightedAmenities={selectedAmenities}
+                    onChange={handleAmenitiesChange}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          
+          {/* Co-organizers section - only show on edit mode since we need the event ID */}
+          {isEditing && initialData?.id && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Event Co-Organizers</h3>
+              <Card>
+                <CardContent className="pt-6">
+                  <EventCoOrganizers
+                    eventId={initialData.id}
+                    existingCoOrganizers={coOrganizers}
+                    onChange={handleCoOrganizersChange}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <Button type="submit" className="w-full">
+            {isEditing ? "Event aktualisieren" : "Event erstellen"}
           </Button>
         </form>
       </Form>
@@ -983,6 +965,6 @@ export default function EventForm({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 } 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import ClientLayout from "@/components/layout/ClientLayout";
-import ClientErrorBoundary from "@/components/layout/ClientErrorBoundary";
+import Providers from "./providers";
 
 const geistSans = localFont({
   src: [
@@ -146,11 +146,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ClientErrorBoundary>
+        <Providers>
           <ClientLayout>
             {children}
           </ClientLayout>
-        </ClientErrorBoundary>
+        </Providers>
       </body>
     </html>
   );
