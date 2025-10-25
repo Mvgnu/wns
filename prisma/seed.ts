@@ -141,12 +141,13 @@ async function main() {
       groups.push(group);
       console.log(`Created group: ${group.name}`);
       
-      // Add creator as admin
-      await prisma.groupMember.create({
+      // Add creator as member and create status record
+      await prisma.groupMemberStatus.create({
         data: {
           userId: createdBy.id,
           groupId: group.id,
-          role: "admin",
+          status: "active",
+          joinedAt: new Date(),
         },
       });
       
@@ -158,13 +159,12 @@ async function main() {
         .slice(0, memberCount);
       
       for (const member of selectedMembers) {
-        const isModerator = Math.random() > 0.8; // 20% chance of being a moderator
-        
-        await prisma.groupMember.create({
+        await prisma.groupMemberStatus.create({
           data: {
             userId: member.id,
             groupId: group.id,
-            role: isModerator ? "moderator" : "member",
+            status: "active",
+            joinedAt: new Date(),
           },
         });
       }

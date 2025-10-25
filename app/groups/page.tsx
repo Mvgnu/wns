@@ -12,10 +12,72 @@ import GroupsClientWrapper from './components/GroupsClientWrapper';
 import { checkPrismaConnection } from "@/lib/prisma";
 import { getSafeServerSession } from "@/lib/sessionHelper";
 
-export const metadata: Metadata = {
-  title: "Gruppen - WNS Community",
-  description: "Entdecke und tritt Gruppen von Hobbysport-Enthusiasten bei",
-};
+// Dynamic metadata based on search parameters
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}): Promise<Metadata> {
+  const searchQuery = searchParams.search as string | undefined;
+  const sportQuery = searchParams.sport as string | undefined;
+  const sportsQuery = searchParams.sports as string | undefined;
+  const groupTypeQuery = searchParams.type as string | undefined;
+
+  // Check if page has filters (should not be indexed)
+  const hasFilters = !!(searchQuery || sportQuery || sportsQuery || groupTypeQuery);
+
+  // Build canonical URL - always point to base groups page
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://wns-community.com';
+  const canonicalUrl = `${baseUrl}/groups`;
+
+  // Build description based on filters
+  let description = "Entdecke und tritt Gruppen von Hobbysport-Enthusiasten bei";
+
+  if (searchQuery) {
+    description = `Suche nach "${searchQuery}" - Entdecke passende Sportgruppen in der WNS Community`;
+  } else if (sportQuery) {
+    const sportObj = allSports.find(s => s.value === sportQuery);
+    const sportLabel = sportObj?.label || sportQuery;
+    description = `${sportLabel} Gruppen - Entdecke ${sportLabel} Gruppen und Communities`;
+  } else if (sportsQuery) {
+    const sportsArray = sportsQuery.split(',');
+    const sportLabels = sportsArray.map(sport => {
+      const sportObj = allSports.find(s => s.value === sport);
+      return sportObj?.label || sport;
+    });
+    description = `${sportLabels.join(', ')} Gruppen - Entdecke Sportgruppen für ${sportLabels.join(', ')}`;
+  } else if (groupTypeQuery === 'clubs') {
+    description = "Sportvereine und Clubs - Professionelle und organisierte Sportgruppen";
+  } else if (groupTypeQuery === 'groups') {
+    description = "Sportgruppen - Informelle und freizeitliche Sport-Communities";
+  }
+
+  return {
+    title: searchQuery ? `Suche: ${searchQuery} - Gruppen` : "Gruppen - WNS Community",
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    robots: hasFilters ? {
+      index: false, // Don't index filtered pages
+      follow: true,
+    } : {
+      index: true,
+      follow: true,
+    },
+    openGraph: {
+      title: searchQuery ? `Suche: ${searchQuery} - Gruppen` : "Gruppen - WNS Community",
+      description,
+      url: canonicalUrl,
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: searchQuery ? `Suche: ${searchQuery} - Gruppen` : "Gruppen - WNS Community",
+      description,
+    },
+  };
+}
 
 type Group = {
   id: string;
@@ -35,8 +97,8 @@ type Group = {
   activityLevel?: string | null;
   groupTags?: string[];
   status?: string;
-  entryRules?: any;
-  settings?: any;
+  entryRules: any;
+  settings: any;
   _count: {
     members: number;
   };
@@ -66,11 +128,12 @@ export default async function GroupsPage({
     }
 
     const session = await getSafeServerSession();
-    const searchQuery = searchParams.search as string | undefined;
-    const sportQuery = searchParams.sport as string | undefined;
-    const sportsQuery = searchParams.sports as string | undefined;
+    const resolvedSearchParams = await searchParams;
+    const searchQuery = resolvedSearchParams.search as string | undefined;
+    const sportQuery = resolvedSearchParams.sport as string | undefined;
+    const sportsQuery = resolvedSearchParams.sports as string | undefined;
     const selectedSports = sportsQuery ? sportsQuery.split(',') : [];
-    const groupTypeQuery = searchParams.type as string | undefined;
+    const groupTypeQuery = resolvedSearchParams.type as string | undefined;
 
     // Build the where clause for the Prisma query
     let where: Prisma.GroupWhereInput = {};
@@ -157,18 +220,14 @@ export default async function GroupsPage({
     // Separate groups into sports clubs and user groups
     // We'll consider a group a "sports club" if it has high activity level, structured entry rules, or specific tags
     const sportsClubs = groups.filter(group => {
-      // Parse the entryRules and settings JSON if they exist
-      const entryRules = group.entryRules ? 
-        (typeof group.entryRules === 'string' ? JSON.parse(group.entryRules) : group.entryRules) : null;
-      const settings = group.settings ? 
-        (typeof group.settings === 'string' ? JSON.parse(group.settings) : group.settings) : null;
-      
-      // Check if it's a structured club with formal requirements
-      const isStructured = entryRules?.requireApproval === true || 
-                           settings?.contentModeration === 'high';
-      
+      // Parse JSON settings for structured fields
+      const entryRules = group.entryRules as any || {};
+      const settings = group.settings as any || {};
+      const isStructured = entryRules.requireApproval === true ||
+                           settings.contentModeration === 'high';
+
       // Check for club-like tags
-      const hasClubTags = group.groupTags?.some(tag => 
+      const hasClubTags = group.groupTags?.some(tag =>
         ['verein', 'club', 'team', 'wettbewerb', 'fortgeschritten'].includes(tag)
       );
 

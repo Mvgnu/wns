@@ -14,10 +14,83 @@ import { Calendar, Users, MapPin, Search, Plus, PlusCircle, Filter, ChevronRight
 import { de } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 
-export const metadata: Metadata = {
-  title: "Veranstaltungen - WNS Community",
-  description: "Entdecke und nimm teil an Veranstaltungen für deine Lieblingssportarten",
-};
+// Dynamic metadata based on search parameters
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}): Promise<Metadata> {
+  const searchQuery = searchParams.search as string | undefined;
+  const sportQuery = searchParams.sport as string | undefined;
+  const sportsQuery = searchParams.sports as string | undefined;
+  const locationQuery = searchParams.location as string | undefined;
+  const dateQuery = searchParams.date as string | undefined;
+  const groupQuery = searchParams.group as string | undefined;
+
+  // Check if page has filters (should not be indexed)
+  const hasFilters = !!(searchQuery || sportQuery || sportsQuery || locationQuery || dateQuery || groupQuery);
+
+  // Build canonical URL - always point to base events page
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://wns-community.com';
+  const canonicalUrl = `${baseUrl}/events`;
+
+  // Build description based on filters
+  let description = "Entdecke und nimm teil an Veranstaltungen für deine Lieblingssportarten";
+
+  if (searchQuery) {
+    description = `Suche nach "${searchQuery}" - Finde passende Sportveranstaltungen in der WNS Community`;
+  } else if (sportQuery) {
+    const sportObj = allSports.find(s => s.value === sportQuery);
+    const sportLabel = sportObj?.label || sportQuery;
+    description = `${sportLabel} Events - Entdecke ${sportLabel} Veranstaltungen und Wettkämpfe`;
+  } else if (sportsQuery) {
+    const sportsArray = sportsQuery.split(',');
+    const sportLabels = sportsArray.map(sport => {
+      const sportObj = allSports.find(s => s.value === sport);
+      return sportObj?.label || sport;
+    });
+    description = `${sportLabels.join(', ')} Events - Sportveranstaltungen für ${sportLabels.join(', ')}`;
+  } else if (locationQuery) {
+    description = `Events in ${locationQuery} - Sportveranstaltungen und Events in deiner Nähe`;
+  } else if (dateQuery) {
+    const dateLabels: { [key: string]: string } = {
+      today: 'Heute',
+      tomorrow: 'Morgen',
+      weekend: 'Wochenende',
+      week: 'Diese Woche',
+      month: 'Diesen Monat',
+    };
+    description = `Events ${dateLabels[dateQuery] || dateQuery} - Sportveranstaltungen ${dateLabels[dateQuery] || dateQuery}`;
+  } else if (groupQuery) {
+    description = `Gruppen-Events - Veranstaltungen von Sportgruppen und Vereinen`;
+  }
+
+  return {
+    title: searchQuery ? `Suche: ${searchQuery} - Events` : "Veranstaltungen - WNS Community",
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    robots: hasFilters ? {
+      index: false, // Don't index filtered pages
+      follow: true,
+    } : {
+      index: true,
+      follow: true,
+    },
+    openGraph: {
+      title: searchQuery ? `Suche: ${searchQuery} - Events` : "Veranstaltungen - WNS Community",
+      description,
+      url: canonicalUrl,
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: searchQuery ? `Suche: ${searchQuery} - Events` : "Veranstaltungen - WNS Community",
+      description,
+    },
+  };
+}
 
 // Update the Event type to match what's returned from Prisma
 type Event = {

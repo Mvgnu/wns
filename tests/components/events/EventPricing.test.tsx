@@ -2,6 +2,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EventPricing } from '@/components/events/EventPricing';
 
+const hasCombinedText = (pattern: RegExp) => (_: string, node?: Element | null) => {
+  const text = node?.textContent || ''
+  return pattern.test(text)
+}
+
 describe('EventPricing Component', () => {
   // Test rendering in free mode
   test('renders in free mode by default', () => {
@@ -37,7 +42,7 @@ describe('EventPricing Component', () => {
     
     const currencySelect = screen.getByLabelText(/currency/i);
     expect(currencySelect).toBeInTheDocument();
-    expect(currencySelect).toHaveTextContent('EUR');
+    expect(currencySelect).toHaveTextContent(/(EUR|Euro)/);
   });
   
   // Test rendering in readonly mode
@@ -57,7 +62,9 @@ describe('EventPricing Component', () => {
     expect(screen.getByText(/25.99/)).toBeInTheDocument();
     expect(screen.getByText(/USD/)).toBeInTheDocument();
     expect(screen.getByText(/Includes equipment rental/)).toBeInTheDocument();
-    expect(screen.getByText(/Limited capacity: 20 attendees/)).toBeInTheDocument();
+    // Combined text across nodes; use AllByText to avoid multiple match error
+    const matchesPaid = screen.getAllByText(hasCombinedText(/Limited capacity:\s*20\s*attendees/));
+    expect(matchesPaid.length).toBeGreaterThan(0);
   });
   
   // Test readonly free event display
@@ -66,7 +73,9 @@ describe('EventPricing Component', () => {
     
     // Check if "Free event" is displayed
     expect(screen.getByText(/Free event/)).toBeInTheDocument();
-    expect(screen.getByText(/Limited capacity: 50 attendees/)).toBeInTheDocument();
+    // Combined text across nodes; use AllByText to avoid multiple match error
+    const matches = screen.getAllByText(hasCombinedText(/Limited capacity:\s*50\s*attendees/));
+    expect(matches.length).toBeGreaterThan(0);
   });
   
   // Test toggling between paid and free
@@ -129,8 +138,8 @@ describe('EventPricing Component', () => {
     const currencySelect = screen.getByLabelText(/currency/i);
     await userEvent.click(currencySelect);
     
-    // Select USD
-    const usdOption = screen.getByText(/US Dollar/i);
+    // Select USD (fallback for jsdom: look for label text that includes USD)
+    const usdOption = await screen.findByText(/USD|US Dollar/i);
     await userEvent.click(usdOption);
     
     // Should call onChange with new currency

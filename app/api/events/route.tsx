@@ -12,12 +12,8 @@ import { addDays, addWeeks, addMonths, isBefore, getDay, getDate } from "date-fn
 const eventCreateSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().optional(),
-  startTime: z.string().refine((value) => !isNaN(Date.parse(value)), {
-    message: "Start time must be a valid date string",
-  }),
-  endTime: z.string().refine((value) => !isNaN(Date.parse(value)), {
-    message: "End time must be a valid date string",
-  }).optional().or(z.literal('')).nullable(),
+  startTime: z.string().refine((value) => !isNaN(Date.parse(value)), { message: "Start time must be a valid date string" }),
+  endTime: z.string().refine((value) => !isNaN(Date.parse(value)), { message: "End time must be a valid date string" }).optional().or(z.literal('')).nullable(),
   image: z.union([
     z.string().url({ message: "Image must be a valid URL" }),
     z.string().startsWith('/uploads/', { message: "Image must be a valid path" }),
@@ -33,11 +29,15 @@ const eventCreateSchema = z.object({
   isRecurring: z.boolean().optional().default(false),
   recurringPattern: z.enum(["daily", "weekly", "monthly"]).optional(),
   recurringDays: z.array(z.number()).optional(),
-  recurringEndDate: z.string().refine((value) => !value || !isNaN(Date.parse(value)), {
-    message: "Recurring end date must be a valid date string",
-  }).optional().nullable().transform(val => val === "" ? null : val),
+  recurringEndDate: z.string().refine((value) => !value || !isNaN(Date.parse(value)), { message: "Recurring end date must be a valid date string" }).optional().nullable().transform(val => val === "" ? null : val),
   // Who can join the event
   joinRestriction: z.enum(["everyone", "groupOnly"]).default("everyone"),
+  // Pricing & capacity
+  isPaid: z.boolean().optional().default(false),
+  price: z.number().optional().nullable(),
+  priceCurrency: z.string().optional(),
+  priceDescription: z.string().optional(),
+  maxAttendees: z.number().int().positive().optional().nullable(),
 });
 
 // Schema for event update
@@ -573,60 +573,31 @@ export async function POST(req: NextRequest) {
       data: {
         ...eventData,
         organizerId: user.id,
-        // Set joinRestriction if not specified
         joinRestriction: validatedData.joinRestriction || "everyone",
-        // Add the creator as an attendee automatically
-        attendees: {
-          connect: [{ id: user.id }]
-        },
-        // Add participation response for the creator
-        participationResponses: {
-          create: {
-            userId: user.id,
-            response: "attending"
-          }
-        }
+        attendees: { connect: [{ id: user.id }] },
+        participationResponses: { create: { userId: user.id, response: "attending" } }
       },
-      include: {
-        organizer: true,
-        group: true,
-        location: true,
-        attendees: true,
-      },
+      include: { organizer: true, group: true, location: true, attendees: true },
     });
 
     // Send notification to group members if this is a group event
     if (event.groupId) {
-      const group = await prisma.group.findUnique({
-        where: { id: event.groupId },
-        include: {
-          members: true,
-        },
-      });
-
+      const group = await prisma.group.findUnique({ where: { id: event.groupId }, include: { members: true } });
       if (group) {
         for (const member of group.members) {
-          // Don't send notification to the event creator
           if (member.id !== user.id) {
-            const notification = await prisma.notification.create({
-              data: {
-                userId: member.id,
-                type: "NEW_GROUP_EVENT",
-                message: `New event "${event.title}" in ${group.name}`,
-                read: false,
-                relatedId: event.id,
-                linkUrl: `/events/${event.id}`,
-                actorId: user.id,
-              },
+            await sendNotificationToUser(member.id, {
+              type: "event_created",
+              message: `New event created: ${event.title}`,
+              linkUrl: `/events/${event.id}`,
+              actorId: user.id,
             });
-
-            sendNotificationToUser(member.id, notification);
           }
         }
       }
     }
 
-    return NextResponse.json(event);
+    return NextResponse.json(event, { status: 201 });
   } catch (error) {
     console.error("Error creating event:", error);
     if (error instanceof z.ZodError) {

@@ -55,7 +55,7 @@ export default function GroupPostsList({ posts, groupId, userId, isMember }: Gro
     <div>
       {posts.map((post) => (
         <div key={post.id} className="border-b dark:border-gray-700 last:border-0">
-          <Link href={`/posts/${post.id}`} className="block p-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition">
+          <Link href={`/posts/${post.slug || post.id}`} className="block p-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition">
             <div className="flex items-start space-x-3">
               <div className="flex-shrink-0">
                 <div className="relative h-10 w-10 rounded-full overflow-hidden">

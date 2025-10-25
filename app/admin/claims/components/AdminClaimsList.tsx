@@ -40,7 +40,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { Tabs, TabsContent, TabsItem, TabsList } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Type for a claim with its related data
 interface Claim {
@@ -212,18 +212,18 @@ export default function AdminClaimsList({ initialClaims }: AdminClaimsListProps)
       <Tabs defaultValue="pending" onValueChange={(value) => setActiveTab(value as any)}>
         <div className="flex justify-between items-center">
           <TabsList>
-            <TabsItem value="pending">
+            <TabsTrigger value="pending">
               Pending ({pendingCount})
-            </TabsItem>
-            <TabsItem value="approved">
+            </TabsTrigger>
+            <TabsTrigger value="approved">
               Approved ({approvedCount})
-            </TabsItem>
-            <TabsItem value="rejected">
+            </TabsTrigger>
+            <TabsTrigger value="rejected">
               Rejected ({rejectedCount})
-            </TabsItem>
-            <TabsItem value="all">
+            </TabsTrigger>
+            <TabsTrigger value="all">
               All ({claims.length})
-            </TabsItem>
+            </TabsTrigger>
           </TabsList>
         </div>
         

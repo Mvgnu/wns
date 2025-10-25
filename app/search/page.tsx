@@ -11,13 +11,31 @@ export async function generateMetadata({
 }: SearchPageProps): Promise<Metadata> {
   const query = searchParams.q || "";
   const type = searchParams.type || "all";
-  
+
+  // Build canonical URL - always point to base search page
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://wns-community.com';
+  const canonicalUrl = `${baseUrl}/search`;
+
   return {
     title: `Suchergebnisse für "${query}"`,
     description: `Suchergebnisse für "${query}" in ${type === "all" ? "allen Kategorien" : type}`,
+    alternates: {
+      canonical: canonicalUrl,
+    },
     robots: {
       index: false, // Don't index search results pages
       follow: true,
+    },
+    openGraph: {
+      title: `Suchergebnisse für "${query}"`,
+      description: `Suchergebnisse für "${query}" in ${type === "all" ? "allen Kategorien" : type}`,
+      url: canonicalUrl,
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary',
+      title: `Suchergebnisse für "${query}"`,
+      description: `Suchergebnisse für "${query}" in ${type === "all" ? "allen Kategorien" : type}`,
     },
   };
 }

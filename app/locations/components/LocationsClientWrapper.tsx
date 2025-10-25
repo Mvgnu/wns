@@ -12,6 +12,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import LocationCard from '@/components/locations/LocationCard';
 
 // Dynamically import the map component to avoid SSR issues
 const LocationsMap = dynamic(() => import('./LocationsMap'), {
@@ -465,65 +466,21 @@ export default function LocationsClientWrapper({
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {locations.map((location: Location) => (
-                        <Card key={location.id} className="overflow-hidden hover:shadow-md transition-all duration-300 h-full flex flex-col group border-gray-100">
-                          <div className="h-48 bg-gray-100 relative overflow-hidden">
-                            {location.image ? (
-                              <img
-                                src={location.image}
-                                alt={location.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-100 text-green-600">
-                                <span className="text-4xl font-bold opacity-40">{location.name.charAt(0)}</span>
-                              </div>
-                            )}
-                            <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent text-white">
-                              <div className="flex flex-wrap gap-2 mb-1">
-                                <Badge className="bg-green-500/90 hover:bg-green-600 border-none text-white">
-                                  {location.placeType}
-                                </Badge>
-                                <Badge className="bg-blue-500/90 hover:bg-blue-600 border-none text-white">
-                                  {location.sport}
-                                </Badge>
-                              </div>
-                              <h3 className="font-semibold line-clamp-1">{location.name}</h3>
-                            </div>
-                          </div>
-                          
-                          <CardContent className="py-4 flex-grow">
-                            {location.averageRating !== null && (
-                              <div className="flex items-center text-sm text-gray-500 mb-3">
-                                <Star className="h-4 w-4 mr-2 text-yellow-500 fill-yellow-500" />
-                                <span>
-                                  {location.averageRating.toFixed(1)} {location._count.reviews > 0 && `(${location._count.reviews})`}
-                                </span>
-                              </div>
-                            )}
-                            
-                            {location.address && (
-                              <div className="flex items-center text-sm text-gray-500 mb-3">
-                                <MapPin className="h-4 w-4 mr-2 text-green-500" />
-                                <span className="line-clamp-1">{location.address}</span>
-                              </div>
-                            )}
-                            
-                            {location.description && (
-                              <p className="text-gray-600 mt-4 line-clamp-2 text-sm">
-                                {location.description}
-                              </p>
-                            )}
-                          </CardContent>
-                          
-                          <CardFooter className="pt-0 pb-4">
-                            <Button variant="outline" size="sm" className="w-full group-hover:bg-green-50 group-hover:text-green-600 transition-colors duration-300" asChild>
-                              <Link href={`/locations/${location.id}`} className="flex items-center justify-center">
-                                Details ansehen
-                                <ChevronRight className="ml-1 w-4 h-4" />
-                              </Link>
-                            </Button>
-                          </CardFooter>
-                        </Card>
+                        <LocationCard
+                          key={location.id}
+                          id={location.id}
+                          name={location.name}
+                          description={location.description}
+                          type={location.placeType}
+                          sport={location.sport}
+                          address={location.address}
+                          rating={location.averageRating}
+                          image={location.image}
+                          priceRange={location.priceRange}
+                          difficulty={location.difficulty}
+                          amenities={location.amenities}
+                          _count={location._count}
+                        />
                       ))}
                     </div>
                   )}

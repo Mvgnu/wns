@@ -48,7 +48,7 @@ const fetchPosts = async (): Promise<Post[]> => {
 const fetchPostById = async (id: string): Promise<Post> => {
   const response = await fetch(`/api/posts/${id}`);
   if (!response.ok) {
-    throw new Error(`Failed to fetch post with id ${id}`);
+    throw new Error(`Failed to fetch post with id/slug ${id}`);
   }
   return response.json();
 };

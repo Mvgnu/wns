@@ -591,24 +591,14 @@ export default function GroupsClientWrapper({
                           </div>
                         )}
                         
-                        {group.entryRules && (
+                        {group.requireApproval && (
                           <div className="flex flex-wrap gap-2 mt-1">
-                            {JSON.parse(typeof group.entryRules === 'string' ? group.entryRules : JSON.stringify(group.entryRules)).requireApproval && (
-                              <Badge variant="outline" className={`text-xs font-normal ${
-                                isSportsClub ? 'text-indigo-600 border-indigo-200' : 'text-gray-600 border-gray-200'
-                              }`}>
-                                <Shield className="h-2.5 w-2.5 mr-1" />
-                                Freigabe erforderlich
-                              </Badge>
-                            )}
-                            {JSON.parse(typeof group.entryRules === 'string' ? group.entryRules : JSON.stringify(group.entryRules)).inviteOnly && (
-                              <Badge variant="outline" className={`text-xs font-normal ${
-                                isSportsClub ? 'text-indigo-600 border-indigo-200' : 'text-gray-600 border-gray-200'
-                              }`}>
-                                <Lock className="h-2.5 w-2.5 mr-1" />
-                                Nur mit Einladung
-                              </Badge>
-                            )}
+                            <Badge variant="outline" className={`text-xs font-normal ${
+                              isSportsClub ? 'text-indigo-600 border-indigo-200' : 'text-gray-600 border-gray-200'
+                            }`}>
+                              <Shield className="h-2.5 w-2.5 mr-1" />
+                              Freigabe erforderlich
+                            </Badge>
                           </div>
                         )}
                       </CardContent>

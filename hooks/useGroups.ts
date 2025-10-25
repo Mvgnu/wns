@@ -8,11 +8,16 @@ interface Group {
   description?: string;
   image?: string;
   sport: string;
+  sports?: string[];
   location?: string;
   createdAt: string;
   updatedAt: string;
   ownerId: string;
   members: any[];
+  groupTags?: string[];
+  activityLevel?: 'low' | 'medium' | 'high';
+  entryRules?: any;
+  settings?: any;
 }
 
 // API functions

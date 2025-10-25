@@ -122,7 +122,7 @@ export async function POST(
       sendNotificationToUser(location.addedById, notification);
     }
 
-    return NextResponse.json(review);
+    return NextResponse.json(review, { status: 201 });
   } catch (error) {
     console.error("Error creating review:", error);
     return NextResponse.json(

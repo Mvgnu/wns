@@ -9,6 +9,10 @@ async function checkAmenityManagementPermission(userId: string, placeId: string)
     return false;
   }
 
+  // Allow the user who added the location
+  const location = await prisma.location.findUnique({ where: { id: placeId }, select: { addedById: true } });
+  if (location?.addedById === userId) return true;
+
   // Check if user is the owner or has place edit permission
   const staffRecord = await prisma.placeStaff.findFirst({
     where: {
@@ -60,9 +64,7 @@ export async function DELETE(
     }
 
     // Delete the amenity
-    await prisma.placeAmenity.delete({
-      where: { id: amenityId }
-    });
+    await prisma.placeAmenity.delete({ where: { id: amenityId } });
 
     return NextResponse.json({ success: true });
   } catch (error) {

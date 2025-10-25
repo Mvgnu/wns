@@ -19,6 +19,9 @@ import { allSports } from '@/lib/sportsData';
 import 'filepond/dist/filepond.min.css';
 import 'filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css';
 import { toast } from 'react-hot-toast';
+import { Badge } from '@/components/ui/badge';
+import { standardAmenities } from '@/lib/amenities';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Register FilePond plugins
 registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateType);
@@ -62,6 +65,9 @@ export default function CreateLocationPage() {
   const [lineCoordinates, setLineCoordinates] = useState<Coordinate[]>([]);
   const [selectedSport, setSelectedSport] = useState<string>('');
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('');
+  const [selectedPriceRange, setSelectedPriceRange] = useState<string>('');
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -159,14 +165,32 @@ export default function CreateLocationPage() {
         }
       }
 
+      // Derive detailType and placeType from provided type + line-based flag
+      const detailType = data.type;
+      const lower = (detailType || '').toLowerCase();
+      const placeType = isLineBased || /(trail|route|hiking|biking|running)/.test(lower)
+        ? 'trail'
+        : /(gym|studio|skatepark|court|field|pool|hall|arena)/.test(lower)
+          ? 'facility'
+          : 'spot';
+
       // Prepare location data
       const locationData = {
         ...data,
+        // ensure sports include primary sport
+        sports: Array.isArray(data.sports) && data.sports.length > 0
+          ? (data.sports.includes(data.sport) ? data.sports : [data.sport, ...data.sports])
+          : [data.sport],
+        placeType,
+        detailType,
         latitude: coordinates ? coordinates.latitude : lineCoordinates[0]?.latitude,
         longitude: coordinates ? coordinates.longitude : lineCoordinates[0]?.longitude,
         images: imageUrls,
         isLineBased,
         coordinates: isLineBased ? lineCoordinates : null,
+        amenities: selectedAmenities,
+        difficulty: selectedDifficulty || undefined,
+        priceRange: selectedPriceRange || undefined,
       };
 
       // Submit to API
@@ -311,6 +335,58 @@ export default function CreateLocationPage() {
                     ? "For trails and routes, you'll draw a line on the map by clicking multiple points." 
                     : "For spots, just click once on the map to mark the exact location."}
                 </p>
+              </div>
+
+              <div>
+                <Label>Amenities (optional)</Label>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {standardAmenities.slice(0, 12).map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedAmenities((prev) =>
+                          prev.includes(a.id) ? prev.filter((id) => id !== a.id) : [...prev, a.id]
+                        )
+                      }
+                      className={`text-left text-sm border rounded px-2 py-1 ${selectedAmenities.includes(a.id) ? 'bg-green-50 border-green-300' : 'bg-white'}`}
+                    >
+                      {a.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Schwierigkeitsgrad (optional)</Label>
+                  <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Schwierigkeit wählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Einfach</SelectItem>
+                      <SelectItem value="medium">Mittel</SelectItem>
+                      <SelectItem value="hard">Schwer</SelectItem>
+                      <SelectItem value="expert">Experte</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Preisklasse (optional)</Label>
+                  <Select value={selectedPriceRange} onValueChange={setSelectedPriceRange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Preisklasse wählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="free">Kostenlos</SelectItem>
+                      <SelectItem value="low">Günstig</SelectItem>
+                      <SelectItem value="medium">Mittel</SelectItem>
+                      <SelectItem value="high">Teuer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div>

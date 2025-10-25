@@ -183,6 +183,10 @@ model Post {
   content   String
   images    String[] // Array of image URLs
   videos    String[] // Array of video URLs
+
+  // SEO-friendly URL identifier
+  slug      String?  @unique // URL-friendly identifier
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -196,6 +200,7 @@ model Post {
 
   // Indexes for better query performance
   @@index([title])
+  @@index([slug])
   @@index([authorId])
   @@index([groupId])
   @@index([createdAt])
@@ -247,15 +252,18 @@ model Location {
   id          String   @id @default(cuid())
   name        String
   description String?
-  
+
+  // SEO-friendly URL identifier
+  slug        String?  @unique // URL-friendly identifier
+
   // Place type classification
   placeType   String   // "facility", "trail", "spot" - legacy field
   detailType  String   // Specific type: "studio", "gym", "skatepark", "trail", "viewpoint", etc.
-  
+
   // Sport classifications
   sport       String   // Main sport (kept for backward compatibility)
   sports      String[] // Array of sports for multi-sport locations
-  
+
   // Common location data
   latitude    Float
   longitude   Float
@@ -266,30 +274,31 @@ model Location {
   zipCode     String?
   image       String?  // Main image URL
   images      String[] // Additional image URLs
-  
+
   // Enhanced contact/business info for facilities
   website     String?
   phone       String?
   email       String?
   openingHours Json?   // JSON structure with opening hours
-  
+
   // Enhanced place metadata
   verified    Boolean  @default(false) // If this place is verified by admins
   featured    Boolean  @default(false) // If this place should be featured in listings
   priceRange  String?  // "free", "low", "medium", "high"
-  
+  rating      Float?   // Average rating from reviews
+
   // Facility details
   capacity    Int?     // Only for facilities: how many people can use it at once
   hasParking  Boolean? // Only for facilities
   isAccessible Boolean? // Wheelchair accessible
-  
+
   // For line-based locations (trails, routes)
   isLineBased Boolean  @default(false)
   coordinates Json?    // Array of coordinates for line-based locations
   difficulty  String?  // "easy", "medium", "hard" - mostly for trails
   distance    Float?   // Distance in km - for trails
   elevation   Float?   // Elevation gain in meters - for trails
-  
+
   // Timestamps
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -325,6 +334,7 @@ model Location {
 
   // Indexes for better query performance
   @@index([name])
+  @@index([slug])
   @@index([placeType, detailType])
   @@index([sport])
   @@index([sports])
@@ -410,6 +420,7 @@ enum AmenityType {
 // New model for place amenities
 model PlaceAmenity {
   id          String      @id @default(cuid())
+  name        String      // Name of the amenity
   type        AmenityType // Type of amenity using the enum
   details     Json?       // Additional details about the amenity
   isAvailable Boolean     @default(true) // Whether the amenity is currently available
@@ -421,6 +432,7 @@ model PlaceAmenity {
   @@unique([locationId, type])
   @@index([locationId])
   @@index([type])
+  @@index([name])
 }
 
 // New model for place staff/managers
@@ -496,6 +508,10 @@ model Event {
   id                String   @id @default(cuid())
   title             String
   description       String?
+
+  // SEO-friendly URL identifier
+  slug              String?  @unique // URL-friendly identifier
+
   startTime         DateTime
   endTime           DateTime?
   image             String?
@@ -552,6 +568,7 @@ model Event {
 
   // Indexes for better query performance
   @@index([title])
+  @@index([slug])
   @@index([organizerId])
   @@index([groupId])
   @@index([locationId])
@@ -958,6 +975,7 @@ model Club {
   status        String       @default("active")
   settings      Json?        @default("{}")
   verified      Boolean      @default(false)
+  slug          String?      @unique // URL-friendly identifier
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @default(now())
   
@@ -969,6 +987,7 @@ model Club {
   memberRoles   ClubMemberRole[]
   
   @@index([name])
+  @@index([slug])
 }
 
 // New ClubLocation junction model

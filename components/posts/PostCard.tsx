@@ -110,7 +110,7 @@ export default function PostCard({
       
       <CardContent className="pb-2">
         <CardTitle className="mb-2 text-xl">
-          <Link href={`/posts/${id}`} className="hover:underline">
+          <Link href={`/posts/${slug || id}`} className="hover:underline">
             {title}
           </Link>
         </CardTitle>
@@ -172,7 +172,7 @@ export default function PostCard({
             className="flex items-center space-x-1"
             asChild
           >
-            <Link href={`/posts/${id}#comments`}>
+            <Link href={`/posts/${slug || id}#comments`}>
               <MessageSquare className="h-4 w-4" />
               <span>{commentCount}</span>
             </Link>

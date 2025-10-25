@@ -1,4 +1,7 @@
 /**
+ * @jest-environment node
+ */
+/**
  * Group Privacy and Events Tests
  * 
  * This test suite validates the functionality of private groups,
@@ -6,7 +9,20 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { getMockSession } from '../lib/test-utils';
+import { createMockSession } from '../lib/test-utils';
+import { NextRequest } from 'next/server'
+
+// Mocks
+jest.mock('next-auth', () => ({ getServerSession: jest.fn() }))
+jest.mock('@/lib/auth', () => ({ authOptions: {} }))
+jest.mock('@/lib/notificationService', () => ({ sendNotificationToUser: jest.fn() }))
+
+import { GET as GET_GROUP } from '@/app/api/groups/[id]/route'
+import { POST as POST_EVENT } from '@/app/api/events/route'
+import { POST as POST_INVITE } from '@/app/api/groups/invites/route'
+import { sendNotificationToUser } from '@/lib/notificationService'
+
+const { getServerSession } = require('next-auth')
 
 // Initialize a new Prisma Client for tests
 const prisma = new PrismaClient();
@@ -33,272 +49,124 @@ describe('Group Privacy Tests', () => {
 
   // Test group data
   const privateGroup = {
-    id: 'test-private-group',
+    id: `test-private-group-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
     name: 'Test Private Group',
     sport: 'tennis',
     isPrivate: true,
     ownerId: testUsers.owner.id
-  };
+  } as any;
 
   // Setup before all tests
   beforeAll(async () => {
     // Create test users
     await Promise.all([
-      prisma.user.upsert({
-        where: { id: testUsers.owner.id },
-        update: {},
-        create: testUsers.owner
-      }),
-      prisma.user.upsert({
-        where: { id: testUsers.member.id },
-        update: {},
-        create: testUsers.member
-      }),
-      prisma.user.upsert({
-        where: { id: testUsers.nonMember.id },
-        update: {},
-        create: testUsers.nonMember
-      })
+      prisma.user.upsert({ where: { id: testUsers.owner.id }, update: {}, create: testUsers.owner }),
+      prisma.user.upsert({ where: { id: testUsers.member.id }, update: {}, create: testUsers.member }),
+      prisma.user.upsert({ where: { id: testUsers.nonMember.id }, update: {}, create: testUsers.nonMember }),
     ]);
 
-    // Create a private group
-    await prisma.group.upsert({
-      where: { id: privateGroup.id },
-      update: {},
-      create: privateGroup
-    });
+    // Create private group
+    await prisma.group.upsert({ where: { id: privateGroup.id }, update: {}, create: privateGroup });
 
-    // Add member to the group
-    await prisma.groupMember.create({
-      data: {
-        groupId: privateGroup.id,
-        userId: testUsers.member.id,
-        role: 'MEMBER'
-      }
-    });
+    // Add member to the group via status table and relation
+    await prisma.groupMemberStatus.create({ data: { groupId: privateGroup.id, userId: testUsers.member.id, status: 'active', joinedAt: new Date() } });
+    await prisma.group.update({ where: { id: privateGroup.id }, data: { members: { connect: { id: testUsers.member.id } } } });
   });
 
   // Cleanup after all tests
   afterAll(async () => {
-    // Delete test data
-    await prisma.notification.deleteMany({
-      where: {
-        userId: {
-          in: [testUsers.owner.id, testUsers.member.id, testUsers.nonMember.id]
-        }
-      }
-    });
-    
-    await prisma.event.deleteMany({
-      where: {
-        groupId: privateGroup.id
-      }
-    });
-    
-    await prisma.groupMember.deleteMany({
-      where: {
-        groupId: privateGroup.id
-      }
-    });
-    
-    await prisma.group.delete({
-      where: {
-        id: privateGroup.id
-      }
-    });
-    
-    await prisma.user.deleteMany({
-      where: {
-        id: {
-          in: [testUsers.owner.id, testUsers.member.id, testUsers.nonMember.id]
-        }
-      }
-    });
-
-    // Close database connection
+    await prisma.notification.deleteMany({ where: { userId: { in: [testUsers.owner.id, testUsers.member.id, testUsers.nonMember.id] } } });
+    await prisma.event.deleteMany({ where: { groupId: privateGroup.id } });
+    await prisma.groupMemberStatus.deleteMany({ where: { groupId: privateGroup.id } });
+    await prisma.groupInvite.deleteMany({ where: { groupId: privateGroup.id } });
+    await prisma.group.update({ where: { id: privateGroup.id }, data: { members: { set: [] } } }).catch(() => {});
+    await prisma.group.delete({ where: { id: privateGroup.id } });
+    await prisma.user.deleteMany({ where: { id: { in: [testUsers.owner.id, testUsers.member.id, testUsers.nonMember.id] } } });
     await prisma.$disconnect();
   });
 
   describe('Group Visibility Tests', () => {
     test('Private group is visible to the owner', async () => {
-      const mockSession = getMockSession(testUsers.owner);
-      
-      // Mock API request to get group
-      const response = await fetch(`/api/groups/${privateGroup.id}`, {
-        headers: {
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        }
-      });
-      
-      expect(response.status).toBe(200);
-      const group = await response.json();
-      expect(group.id).toBe(privateGroup.id);
-      expect(group.isPrivate).toBe(true);
+      getServerSession.mockResolvedValue(createMockSession(testUsers.owner))
+      const req = new NextRequest(`http://localhost:3000/api/groups/${privateGroup.id}`)
+      const res = await GET_GROUP(req, { params: Promise.resolve({ id: privateGroup.id }) })
+      expect(res.status).toBe(200)
+      const group = await res.json()
+      expect(group.id).toBe(privateGroup.id)
+      expect(group.isPrivate).toBe(true)
     });
 
     test('Private group is visible to members', async () => {
-      const mockSession = getMockSession(testUsers.member);
-      
-      // Mock API request to get group
-      const response = await fetch(`/api/groups/${privateGroup.id}`, {
-        headers: {
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        }
-      });
-      
-      expect(response.status).toBe(200);
-      const group = await response.json();
-      expect(group.id).toBe(privateGroup.id);
+      getServerSession.mockResolvedValue(createMockSession(testUsers.member))
+      const req = new NextRequest(`http://localhost:3000/api/groups/${privateGroup.id}`)
+      const res = await GET_GROUP(req, { params: Promise.resolve({ id: privateGroup.id }) })
+      expect(res.status).toBe(200)
+      const group = await res.json()
+      expect(group.id).toBe(privateGroup.id)
     });
 
     test('Private group is NOT visible to non-members', async () => {
-      const mockSession = getMockSession(testUsers.nonMember);
-      
-      // Mock API request to get group
-      const response = await fetch(`/api/groups/${privateGroup.id}`, {
-        headers: {
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        }
-      });
-      
-      // Should return 403 Forbidden
-      expect(response.status).toBe(403);
+      getServerSession.mockResolvedValue(createMockSession(testUsers.nonMember))
+      const req = new NextRequest(`http://localhost:3000/api/groups/${privateGroup.id}`)
+      const res = await GET_GROUP(req, { params: Promise.resolve({ id: privateGroup.id }) })
+      expect(res.status).toBe(403)
     });
   });
 
   describe('Event Creation in Private Groups Tests', () => {
-    const testEvent = {
+    const testEvent: any = {
       title: 'Test Event in Private Group',
       startTime: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
       groupId: privateGroup.id
     };
 
     test('Owner can create an event in a private group', async () => {
-      const mockSession = getMockSession(testUsers.owner);
-      
-      // Mock API request to create event
-      const response = await fetch('/api/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        },
-        body: JSON.stringify(testEvent)
-      });
-      
-      expect(response.status).toBe(201);
-      const event = await response.json();
-      expect(event.title).toBe(testEvent.title);
-      expect(event.groupId).toBe(privateGroup.id);
-      
-      // Save event ID for other tests
-      testEvent.id = event.id;
+      getServerSession.mockResolvedValue(createMockSession(testUsers.owner))
+      const req = new NextRequest('http://localhost:3000/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(testEvent) })
+      const res = await POST_EVENT(req, { params: Promise.resolve({}) } as any)
+      expect(res.status).toBe(201)
+      const event = await res.json()
+      expect(event.title).toBe(testEvent.title)
+      expect(event.groupId).toBe(privateGroup.id)
+      testEvent.id = event.id
     });
 
     test('Member can create an event in a private group', async () => {
-      const mockSession = getMockSession(testUsers.member);
-      
-      // Mock API request to create event
-      const response = await fetch('/api/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        },
-        body: JSON.stringify({
-          title: 'Member Created Event',
-          startTime: new Date(Date.now() + 172800000).toISOString(), // Day after tomorrow
-          groupId: privateGroup.id
-        })
-      });
-      
-      expect(response.status).toBe(201);
+      getServerSession.mockResolvedValue(createMockSession(testUsers.member))
+      const req = new NextRequest('http://localhost:3000/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Member Created Event', startTime: new Date(Date.now() + 172800000).toISOString(), groupId: privateGroup.id }) })
+      const res = await POST_EVENT(req, { params: Promise.resolve({}) } as any)
+      expect(res.status).toBe(201)
     });
 
     test('Non-member CANNOT create an event in a private group', async () => {
-      const mockSession = getMockSession(testUsers.nonMember);
-      
-      // Mock API request to create event
-      const response = await fetch('/api/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        },
-        body: JSON.stringify({
-          title: 'Unauthorized Event',
-          startTime: new Date(Date.now() + 259200000).toISOString(), // 3 days from now
-          groupId: privateGroup.id
-        })
-      });
-      
-      // Should fail
-      expect(response.status).toBe(403);
+      getServerSession.mockResolvedValue(createMockSession(testUsers.nonMember))
+      const req = new NextRequest('http://localhost:3000/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Unauthorized Event', startTime: new Date(Date.now() + 259200000).toISOString(), groupId: privateGroup.id }) })
+      const res = await POST_EVENT(req, { params: Promise.resolve({}) } as any)
+      expect(res.status).toBe(403)
     });
   });
 
   describe('Group Invitation and Notification Tests', () => {
     test('Group owner can invite users', async () => {
-      const mockSession = getMockSession(testUsers.owner);
-      
-      // Mock API request to send invitation
-      const response = await fetch(`/api/groups/${privateGroup.id}/invite`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        },
-        body: JSON.stringify({
-          email: testUsers.nonMember.email
-        })
-      });
-      
-      expect(response.status).toBe(200);
-      
+      getServerSession.mockResolvedValue(createMockSession(testUsers.owner))
+      const req = new NextRequest('http://localhost:3000/api/groups/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ groupId: privateGroup.id, invitedUserId: testUsers.nonMember.id }) })
+      const res = await POST_INVITE(req)
+      expect(res.status).toBe(201)
+
       // Verify notification was created
-      const notification = await prisma.notification.findFirst({
-        where: {
-          userId: testUsers.nonMember.id,
-          type: 'GROUP_INVITATION'
-        }
-      });
-      
+      const notification = await prisma.notification.findFirst({ where: { userId: testUsers.nonMember.id, type: 'GROUP_INVITE' } })
       expect(notification).not.toBeNull();
-      expect(notification?.data).toContain(privateGroup.id);
+      expect(notification?.linkUrl).toContain(privateGroup.id);
     });
 
     test('Group member gets notification for new event', async () => {
-      // Create an event as the owner
-      const mockSession = getMockSession(testUsers.owner);
-      
-      const eventResponse = await fetch('/api/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': `next-auth.session-token=${mockSession.token}`
-        },
-        body: JSON.stringify({
-          title: 'Notification Test Event',
-          startTime: new Date(Date.now() + 345600000).toISOString(), // 4 days from now
-          groupId: privateGroup.id
-        })
-      });
-      
-      expect(eventResponse.status).toBe(201);
-      
-      // Check that member received a notification
-      const notification = await prisma.notification.findFirst({
-        where: {
-          userId: testUsers.member.id,
-          type: 'NEW_GROUP_EVENT'
-        },
-        orderBy: {
-          createdAt: 'desc'
-        }
-      });
-      
-      expect(notification).not.toBeNull();
-      expect(notification?.data).toContain('Notification Test Event');
+      getServerSession.mockResolvedValue(createMockSession(testUsers.owner))
+      const req = new NextRequest('http://localhost:3000/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Notification Test Event', startTime: new Date(Date.now() + 345600000).toISOString(), groupId: privateGroup.id }) })
+      const res = await POST_EVENT(req, { params: Promise.resolve({}) } as any)
+      expect(res.status).toBe(201)
+
+      // Assert realtime notification dispatched to member
+      expect((sendNotificationToUser as jest.Mock).mock.calls.some(([uid, payload]) => uid === testUsers.member.id && payload?.type === 'event_created' && String(payload?.message).includes('Notification Test Event'))).toBe(true)
     });
   });
 }); 

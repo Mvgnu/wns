@@ -8,12 +8,23 @@ import { z } from 'zod';
 const addAmenitySchema = z.object({
   amenities: z.array(
     z.object({
-      name: z.string().min(1, 'Name is required'),
-      icon: z.string().nullable().optional(),
-      description: z.string().nullable().optional(),
+      type: z.string().min(1, 'Type is required'),
+      name: z.string().optional(),
+      details: z.any().optional(),
+      isAvailable: z.boolean().optional(),
     })
   ),
 });
+
+function toAmenityEnum(typeId: string): string {
+  return typeId.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+}
+
+function toDisplayName(idOrName?: string): string | undefined {
+  if (!idOrName) return undefined;
+  const s = idOrName.replace(/[_-]+/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 // Check if user has permission to manage amenities for a place
 async function checkAmenityManagementPermission(userId: string, placeId: string) {
@@ -21,7 +32,11 @@ async function checkAmenityManagementPermission(userId: string, placeId: string)
     return false;
   }
 
-  // Check if user is the owner or has place edit permission
+  // Allow the user who added the location
+  const location = await prisma.location.findUnique({ where: { id: placeId }, select: { addedById: true } });
+  if (location?.addedById === userId) return true;
+
+  // Or user is staff with permissions
   const staffRecord = await prisma.placeStaff.findFirst({
     where: {
       locationId: placeId,
@@ -29,9 +44,9 @@ async function checkAmenityManagementPermission(userId: string, placeId: string)
       OR: [
         { role: 'owner' },
         { role: 'manager' },
-        { canEditPlace: true }
-      ]
-    }
+        { canEditPlace: true },
+      ],
+    },
   });
 
   return !!staffRecord;
@@ -45,33 +60,18 @@ export async function GET(
   const placeId = params.id;
   
   try {
-    // Get the place to check if it exists
-    const place = await prisma.location.findUnique({
-      where: { id: placeId },
-      select: { id: true }
-    });
+    const place = await prisma.location.findUnique({ where: { id: placeId }, select: { id: true } });
+    if (!place) return NextResponse.json({ error: 'Place not found' }, { status: 404 });
 
-    if (!place) {
-      return NextResponse.json({ error: 'Place not found' }, { status: 404 });
-    }
-
-    // Get all amenities for the place
     const amenities = await prisma.placeAmenity.findMany({
-      where: {
-        locationId: placeId,
-      },
-      orderBy: {
-        name: 'asc',
-      }
+      where: { locationId: placeId },
+      orderBy: { name: 'asc' },
     });
 
     return NextResponse.json({ amenities });
   } catch (error) {
     console.error('Error fetching amenities:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch amenities' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch amenities' }, { status: 500 });
   }
 }
 
@@ -87,7 +87,6 @@ export async function POST(
 
   const placeId = params.id;
   
-  // Check permission
   const hasPermission = await checkAmenityManagementPermission(session.user.id, placeId);
   if (!hasPermission) {
     return NextResponse.json(
@@ -98,43 +97,20 @@ export async function POST(
 
   try {
     const body = await req.json();
-    
-    // Validate request body
     const validatedData = addAmenitySchema.parse(body);
-    
-    // Get the place to check if it exists
-    const place = await prisma.location.findUnique({
-      where: { id: placeId },
-      select: { id: true }
-    });
 
-    if (!place) {
-      return NextResponse.json({ error: 'Place not found' }, { status: 404 });
-    }
+    const place = await prisma.location.findUnique({ where: { id: placeId }, select: { id: true } });
+    if (!place) return NextResponse.json({ error: 'Place not found' }, { status: 404 });
 
-    // Create new amenities
     const amenities = await Promise.all(
       validatedData.amenities.map(async (amenity) => {
-        // Check if amenity already exists
-        const existingAmenity = await prisma.placeAmenity.findFirst({
-          where: {
-            locationId: placeId,
-            name: amenity.name,
-          },
-        });
-
-        if (existingAmenity) {
-          return existingAmenity;
-        }
-
-        // Create new amenity
-        return prisma.placeAmenity.create({
-          data: {
-            locationId: placeId,
-            name: amenity.name,
-            icon: amenity.icon,
-            description: amenity.description,
-          },
+        const type = toAmenityEnum(amenity.type);
+        const name = amenity.name || toDisplayName(amenity.type) || amenity.type;
+        const isAvailable = amenity.isAvailable ?? true;
+        return prisma.placeAmenity.upsert({
+          where: { locationId_type: { locationId: placeId, type: type as any } },
+          update: { name, isAvailable, details: amenity.details as any },
+          create: { locationId: placeId, type: type as any, name, isAvailable, details: amenity.details as any },
         });
       })
     );
@@ -142,17 +118,9 @@ export async function POST(
     return NextResponse.json({ amenities }, { status: 201 });
   } catch (error) {
     console.error('Error adding amenities:', error);
-    
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid data', details: error.errors },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid data', details: error.errors }, { status: 400 });
     }
-    
-    return NextResponse.json(
-      { error: 'Failed to add amenities' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to add amenities' }, { status: 500 });
   }
 } 

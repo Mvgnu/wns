@@ -33,17 +33,29 @@ export async function GET(
   try {
     const session = await getServerSession(authOptions);
     const userId = session?.user?.id;
-    const groupId = params.id;
+    const groupParam = params.id;
 
-    // Check if the group exists
-    const group = await prisma.group.findUnique({
-      where: { id: groupId },
-      select: { 
+    // First try to find by slug, then by ID for backward compatibility
+    let group = await prisma.group.findUnique({
+      where: { slug: groupParam },
+      select: {
         id: true,
         ownerId: true,
         isPrivate: true,
       },
     });
+
+    // If not found by slug, try by ID
+    if (!group) {
+      group = await prisma.group.findUnique({
+        where: { id: groupParam },
+        select: {
+          id: true,
+          ownerId: true,
+          isPrivate: true,
+        },
+      });
+    }
 
     if (!group) {
       return NextResponse.json(
@@ -57,7 +69,7 @@ export async function GET(
     if (userId) {
       const admin = await prisma.groupAdmin.findFirst({
         where: {
-          groupId,
+          groupId: group.id,
           userId,
         },
       });
@@ -68,7 +80,7 @@ export async function GET(
     if (group.isPrivate && userId) {
       const isMember = await prisma.group.findFirst({
         where: {
-          id: groupId,
+          id: group.id,
           OR: [
             { ownerId: userId },
             { members: { some: { id: userId } } },
@@ -89,7 +101,7 @@ export async function GET(
       where: {
         OR: [
           { id: group.ownerId },
-          { memberGroups: { some: { id: groupId } } },
+          { memberGroups: { some: { id: group.id } } },
         ],
       },
       select: {
@@ -98,14 +110,14 @@ export async function GET(
         image: true,
         email: true,
         groupMemberStatuses: {
-          where: { groupId },
+          where: { groupId: group.id },
           select: {
             status: true,
             isAnonymous: true,
           },
         },
         groupMemberRoles: {
-          where: { groupId },
+          where: { groupId: group.id },
           select: {
             role: {
               select: {
@@ -173,16 +185,23 @@ export async function POST(
     }
 
     const userId = session.user.id;
-    const groupId = params.id;
-    
+    const groupParam = params.id;
+
     // Parse request body to get isAnonymous flag
     const body = await req.json().catch(() => ({}));
     const isAnonymous = !!body.isAnonymous;
 
-    // Check if the group exists
-    const group = await prisma.group.findUnique({
-      where: { id: groupId },
+    // First try to find by slug, then by ID for backward compatibility
+    let group = await prisma.group.findUnique({
+      where: { slug: groupParam },
     });
+
+    // If not found by slug, try by ID
+    if (!group) {
+      group = await prisma.group.findUnique({
+        where: { id: groupParam },
+      });
+    }
 
     if (!group) {
       return NextResponse.json(
@@ -203,7 +222,7 @@ export async function POST(
     // Check if user is already a member
     const membership = await prisma.group.findFirst({
       where: {
-        id: groupId,
+        id: group.id,
         members: {
           some: {
             id: userId,
@@ -223,7 +242,7 @@ export async function POST(
     await prisma.$transaction([
       // Add user to the group
       prisma.group.update({
-        where: { id: groupId },
+        where: { id: group.id },
         data: {
           members: {
             connect: { id: userId },
@@ -233,17 +252,17 @@ export async function POST(
           }
         },
       }),
-      
+
       // Create or update member status with anonymous flag
       prisma.groupMemberStatus.upsert({
         where: {
           groupId_userId: {
-            groupId,
+            groupId: group.id,
             userId
           }
         },
         create: {
-          groupId,
+          groupId: group.id,
           userId,
           status: "active",
           joinedAt: new Date(),
@@ -285,13 +304,21 @@ export async function PUT(
       );
     }
 
-    const groupId = params.id;
+    const groupParam = params.id;
 
-    // Check if the group exists
-    const group = await prisma.group.findUnique({
-      where: { id: groupId },
+    // First try to find by slug, then by ID for backward compatibility
+    let group = await prisma.group.findUnique({
+      where: { slug: groupParam },
       include: { owner: true },
     });
+
+    // If not found by slug, try by ID
+    if (!group) {
+      group = await prisma.group.findUnique({
+        where: { id: groupParam },
+        include: { owner: true },
+      });
+    }
 
     if (!group) {
       return NextResponse.json(
@@ -310,7 +337,7 @@ export async function PUT(
         // Check if user is already a member
         const membership = await prisma.group.findFirst({
           where: {
-            id: groupId,
+            id: group.id,
             members: {
               some: {
                 id: session.user.id,
@@ -328,7 +355,7 @@ export async function PUT(
 
         // Add user to the group
         await prisma.group.update({
-          where: { id: groupId },
+          where: { id: group.id },
           data: {
             members: {
               connect: { id: session.user.id },
@@ -351,7 +378,7 @@ export async function PUT(
         // Check if user is a member
         const membership = await prisma.group.findFirst({
           where: {
-            id: groupId,
+            id: group.id,
             members: {
               some: {
                 id: session.user.id,
@@ -369,7 +396,7 @@ export async function PUT(
 
         // Remove user from the group
         await prisma.group.update({
-          where: { id: groupId },
+          where: { id: group.id },
           data: {
             members: {
               disconnect: { id: session.user.id },
@@ -400,7 +427,7 @@ export async function PUT(
         // Check if the user to remove is a member
         const membership = await prisma.group.findFirst({
           where: {
-            id: groupId,
+            id: group.id,
             members: {
               some: {
                 id: userId,
@@ -418,7 +445,7 @@ export async function PUT(
 
         // Remove user from the group
         await prisma.group.update({
-          where: { id: groupId },
+          where: { id: group.id },
           data: {
             members: {
               disconnect: { id: userId },
@@ -457,9 +484,9 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const groupId = params.id;
-    if (!groupId) {
-      return new Response(JSON.stringify({ error: "Group ID is required" }), {
+    const groupParam = params.id;
+    if (!groupParam) {
+      return new Response(JSON.stringify({ error: "Group ID or slug is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -475,10 +502,17 @@ export async function DELETE(
 
     const userId = session.user.id;
 
-    // Check if group exists
-    const group = await prisma.group.findUnique({
-      where: { id: groupId },
+    // First try to find by slug, then by ID for backward compatibility
+    let group = await prisma.group.findUnique({
+      where: { slug: groupParam },
     });
+
+    // If not found by slug, try by ID
+    if (!group) {
+      group = await prisma.group.findUnique({
+        where: { id: groupParam },
+      });
+    }
 
     if (!group) {
       return new Response(JSON.stringify({ error: "Group not found" }), {
@@ -503,7 +537,7 @@ export async function DELETE(
     // Check if user is actually a member
     const isMember = await prisma.group.findFirst({
       where: {
-        id: groupId,
+        id: group.id,
         members: { some: { id: userId } },
       },
     });
@@ -520,7 +554,7 @@ export async function DELETE(
 
     // Remove the user from the group's members
     await prisma.group.update({
-      where: { id: groupId },
+      where: { id: group.id },
       data: {
         members: {
           disconnect: { id: userId },
@@ -531,7 +565,7 @@ export async function DELETE(
     // Also check if user is a group admin and remove them if necessary
     const isAdmin = await prisma.groupAdmin.findFirst({
       where: {
-        groupId,
+        groupId: group.id,
         userId,
       },
     });
@@ -552,7 +586,7 @@ export async function DELETE(
         userId: group.ownerId,
         actorId: userId,
         read: false,
-        linkUrl: `/groups/${groupId}`,
+        linkUrl: `/groups/${group.slug || group.id}`,
       },
     });
 

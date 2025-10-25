@@ -271,7 +271,7 @@ export default function SearchBar() {
                       {searchResults.posts.map((post) => (
                         <Link
                           key={post.id}
-                          href={`/posts/${post.id}`}
+                          href={`/posts/${post.slug || post.id}`}
                           onClick={() => setIsOpen(false)}
                           className="flex items-center px-2 py-1.5 hover:bg-gray-50 rounded-md"
                         >

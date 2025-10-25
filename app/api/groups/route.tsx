@@ -15,9 +15,14 @@ const groupCreateSchema = z.object({
     z.undefined(),
     z.null().transform(() => undefined)
   ]).optional(),
-  sport: z.string().min(1, "Sport is required"),
+  sport: z.string().min(1, "Sport is required").optional(),
+  sports: z.array(z.string()).optional(),
   location: z.string().optional(),
   isPrivate: z.boolean().default(false),
+  groupTags: z.array(z.string()).optional(),
+  activityLevel: z.enum(["low","medium","high"]).optional(),
+  entryRules: z.any().optional(),
+  settings: z.any().optional(),
 });
 
 // Schema for group update
@@ -64,19 +69,18 @@ export async function GET(req: NextRequest) {
       // If not logged in, only show public groups
       whereClause.isPrivate = false;
     } else {
-      // If logged in, show public groups and private groups where the user is a member
-      whereClause = {
+      // If logged in, combine existing filters with access conditions
+      const accessClause = {
         OR: [
           { isPrivate: false },
-          { 
-            isPrivate: true,
-            OR: [
-              { ownerId: userId },
-              { members: { some: { id: userId } } }
-            ]
-          }
+          { isPrivate: true, OR: [{ ownerId: userId }, { members: { some: { id: userId } } }] }
         ]
       };
+      if (Object.keys(whereClause).length > 0) {
+        whereClause = { AND: [whereClause, accessClause] };
+      } else {
+        whereClause = accessClause;
+      }
     }
     
     const groups = await prisma.group.findMany({
@@ -156,10 +160,17 @@ export async function POST(req: NextRequest) {
       const validatedData = groupCreateSchema.parse(body);
       console.log("Validated group data:", JSON.stringify(validatedData, null, 2));
 
+      // Derive primary sport from sports array if sport is missing
+      const primarySport = validatedData.sport || (Array.isArray(validatedData.sports) && validatedData.sports[0]) || undefined;
+
+      // Omit non-persisted fields
+      const { sports, ...persistable } = validatedData as any;
+
       // Create the group
       const group = await prisma.group.create({
         data: {
-          ...validatedData,
+          ...persistable,
+          sport: primarySport as any,
           ownerId: session.user.id,
           members: {
             connect: { id: session.user.id }, // Owner is automatically a member

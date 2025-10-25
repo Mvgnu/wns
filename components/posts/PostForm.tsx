@@ -78,14 +78,14 @@ export default function PostForm({ initialData, isEditing = false }: PostFormPro
         data: postData,
       }, {
         onSuccess: () => {
-          router.push(`/posts/${initialData.id}`);
+          router.push(`/posts/${initialData.slug || initialData.id}`);
         },
       });
     } else {
       // Create new post
       createPost.mutate(postData as any, {
         onSuccess: (newPost) => {
-          router.push(`/posts/${newPost.id}`);
+          router.push(`/posts/${newPost.slug || newPost.id}`);
         },
       });
     }

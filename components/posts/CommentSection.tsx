@@ -149,7 +149,7 @@ const CommentItem = ({
           
           {comment._count?.replies && comment._count.replies > 0 && (
             <div className="mt-3 ml-8 text-sm text-blue-600 dark:text-blue-400">
-              <Link href={`/posts/${postId}/comments/${comment.id}`}>
+              <Link href={`/posts/${slug || postId}/comments/${comment.id}`}>
                 {comment._count.replies} {comment._count.replies === 1 ? 'Antwort' : 'Antworten'} anzeigen
               </Link>
             </div>

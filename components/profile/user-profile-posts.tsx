@@ -141,7 +141,7 @@ export default function UserProfilePosts({ userId }: UserProfilePostsProps) {
   return (
     <div className="space-y-4">
       {posts.map((post) => (
-        <Link key={post.id} href={`/posts/${post.id}`}>
+        <Link key={post.id} href={`/posts/${post.slug || post.id}`}>
           <Card className="hover:bg-muted/50 transition-colors">
             <CardContent className="p-4">
               <h3 className="text-lg font-medium mb-2">{post.title}</h3>

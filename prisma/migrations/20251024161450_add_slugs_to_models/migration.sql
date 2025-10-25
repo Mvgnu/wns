@@ -1,0 +1,14 @@
+/*
+  Warnings:
+
+  - A unique constraint covering the columns `[slug]` on the table `Post` will be added. If there are existing duplicate values, this will fail.
+
+*/
+-- AlterTable
+ALTER TABLE "public"."Post" ADD COLUMN     "slug" TEXT;
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Post_slug_key" ON "public"."Post"("slug");
+
+-- CreateIndex
+CREATE INDEX "Post_slug_idx" ON "public"."Post"("slug");

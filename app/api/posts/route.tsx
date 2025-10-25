@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+
 // Schema for post creation
 const postCreateSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),

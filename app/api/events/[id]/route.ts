@@ -7,13 +7,18 @@ import prisma from "@/lib/prisma";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
+function isPromiseLike<T>(x: any): x is Promise<T> { return typeof x?.then === 'function'; }
+async function resolveParams(paramsOrPromise: any): Promise<{ id?: string }> {
+  return isPromiseLike(paramsOrPromise) ? await paramsOrPromise : paramsOrPromise || {};
+}
+
 // GET handler for retrieving a single event by ID
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: any }
 ) {
   try {
-    const eventId = params.id;
+    const { id: eventId } = await resolveParams(context.params);
     
     if (!eventId) {
       return NextResponse.json(
@@ -37,9 +42,7 @@ export async function GET(
             isPrivate: true,
             ownerId: true,
             members: {
-              select: {
-                id: true
-              },
+              select: { id: true },
               where: userId ? { id: userId } : undefined
             }
           }
@@ -83,13 +86,7 @@ export async function GET(
     const event = await prisma.event.findUnique({
       where: { id: eventId },
       include: {
-        organizer: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
+        organizer: { select: { id: true, name: true, image: true } },
         group: {
           select: {
             id: true,
@@ -97,16 +94,8 @@ export async function GET(
             sport: true,
             image: true,
             isPrivate: true,
-            members: {
-              select: {
-                id: true,
-              }
-            },
-            _count: {
-              select: {
-                members: true,
-              }
-            }
+            members: { select: { id: true } },
+            _count: { select: { members: true } }
           },
         },
         location: {
@@ -120,49 +109,29 @@ export async function GET(
             coordinates: true,
           },
         },
-        attendees: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-          take: 20, // Limit to 20 attendees to avoid huge responses
-        },
-        _count: {
-          select: {
-            attendees: true,
-          },
-        },
+        attendees: { select: { id: true, name: true, image: true }, take: 20 },
+        _count: { select: { attendees: true } },
       },
     });
     
     // Check if the current user is attending
     let attendance = { isAttending: false, isOrganizer: false };
     
-    if (session?.user) {
-      attendance.isOrganizer = event!.organizerId === userId;
+    if (session?.user && event) {
+      attendance.isOrganizer = event.organizerId === userId;
       
       if (!attendance.isOrganizer) {
         // Check if user is in attendees
         const attendee = await prisma.event.findFirst({
-          where: {
-            id: eventId,
-            attendees: {
-              some: { id: userId },
-            },
-          },
+          where: { id: eventId, attendees: { some: { id: userId } } },
         });
-        
         attendance.isAttending = !!attendee;
       } else {
         attendance.isAttending = true; // Organizer is automatically attending
       }
     }
     
-    return NextResponse.json({
-      ...event,
-      attendance,
-    });
+    return NextResponse.json({ ...event, attendance });
   } catch (error) {
     console.error("Error fetching event:", error);
     return NextResponse.json(
@@ -175,7 +144,7 @@ export async function GET(
 // DELETE handler for deleting an event
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: any }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -186,7 +155,7 @@ export async function DELETE(
       );
     }
     
-    const eventId = params.id;
+    const { id: eventId } = await resolveParams(context.params);
     
     // Verify the event exists
     const event = await prisma.event.findUnique({
@@ -223,9 +192,7 @@ export async function DELETE(
     }
     
     // Delete the event
-    await prisma.event.delete({
-      where: { id: eventId },
-    });
+    await prisma.event.delete({ where: { id: eventId } });
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -237,10 +204,14 @@ export async function DELETE(
   }
 }
 
-// PATCH handler for updating an event
+export async function PUT(req: NextRequest, context: { params: any }) {
+  // Delegate to PATCH logic for compatibility
+  return PATCH(req, context as any)
+}
+
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: any }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -250,81 +221,33 @@ export async function PATCH(
         { status: 401 }
       );
     }
-    
-    const eventId = params.id;
+
+    const { id: eventId } = await resolveParams(context.params)
     const userId = session.user.id;
-    
-    // Verify the event exists and check permissions
-    const event = await prisma.event.findUnique({
+
+    const existing = await prisma.event.findUnique({
       where: { id: eventId },
       select: { organizerId: true, groupId: true },
     });
-    
-    if (!event) {
-      return NextResponse.json(
-        { error: "Event not found" },
-        { status: 404 }
-      );
+
+    if (!existing) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
-    
-    // Check if user is the organizer or group owner if the event is part of a group
-    let hasPermission = event.organizerId === userId;
-    
-    if (!hasPermission && event.groupId) {
-      // Check if user is the group owner
-      const group = await prisma.group.findUnique({
-        where: { id: event.groupId },
-        select: { ownerId: true },
-      });
-      
+
+    let hasPermission = existing.organizerId === userId;
+    if (!hasPermission && existing.groupId) {
+      const group = await prisma.group.findUnique({ where: { id: existing.groupId }, select: { ownerId: true } });
       hasPermission = group?.ownerId === userId;
     }
-    
     if (!hasPermission) {
-      return NextResponse.json(
-        { error: "You don't have permission to update this event" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    
-    // Parse and validate the update data
-    const data = await req.json();
-    
-    // Update the event
-    const updatedEvent = await prisma.event.update({
-      where: { id: eventId },
-      data,
-      include: {
-        organizer: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
-        group: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
-        location: {
-          select: {
-            id: true,
-            name: true,
-            address: true,
-          },
-        },
-      },
-    });
-    
-    return NextResponse.json(updatedEvent);
+
+    const body = await req.json();
+    const updated = await prisma.event.update({ where: { id: eventId }, data: body });
+    return NextResponse.json(updated, { status: 200 });
   } catch (error) {
     console.error("Error updating event:", error);
-    return NextResponse.json(
-      { error: "Failed to update event" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
   }
 } 

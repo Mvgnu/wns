@@ -24,6 +24,14 @@ const formSchema = z.object({
   location: z.string().optional(),
   image: z.string().optional(),
   isPrivate: z.boolean().default(false),
+  groupTags: z.string().optional(), // comma-separated for UI, will split into array
+  activityLevel: z.enum(["low","medium","high"]).optional(),
+  // Replace JSON strings with structured fields
+  requireApproval: z.boolean().default(false),
+  allowInvites: z.boolean().default(true),
+  contentModeration: z.enum(["low", "medium", "high"]).default("medium"),
+  allowMemberPosts: z.boolean().default(true),
+  allowEventCreation: z.boolean().default(true),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -71,6 +79,14 @@ export default function GroupForm({ initialData, isEditing = false }: GroupFormP
       location: initialData?.location || "",
       image: initialData?.image || "",
       isPrivate: initialData?.isPrivate || false,
+      groupTags: "",
+      activityLevel: undefined,
+      // Replace JSON strings with structured fields
+      requireApproval: false,
+      allowInvites: true,
+      contentModeration: "medium",
+      allowMemberPosts: true,
+      allowEventCreation: true,
     },
   });
 
@@ -88,42 +104,39 @@ export default function GroupForm({ initialData, isEditing = false }: GroupFormP
       // For backward compatibility, use the first sport as the main sport
       const primarySport = values.sports[0] || "";
 
+      const payload: any = {
+        name: values.name,
+        description: values.description,
+        sports: values.sports,
+        sport: primarySport,
+        location: values.location,
+        image: values.image,
+        isPrivate: values.isPrivate,
+      };
+      if (values.groupTags && values.groupTags.trim().length > 0) {
+        payload.groupTags = values.groupTags.split(',').map(t => t.trim()).filter(Boolean);
+      }
+      if (values.activityLevel) {
+        payload.activityLevel = values.activityLevel;
+      }
+      // Replace JSON strings with structured fields
+      payload.requireApproval = values.requireApproval;
+      payload.allowInvites = values.allowInvites;
+      payload.contentModeration = values.contentModeration;
+      payload.allowMemberPosts = values.allowMemberPosts;
+      payload.allowEventCreation = values.allowEventCreation;
+
       if (isEditing && initialData) {
-        // Update existing group
-        updateGroup.mutate({
-          id: initialData.id,
-          data: {
-            ...values,
-            sport: primarySport, // For backward compatibility
-          },
-        }, {
-          onSuccess: () => {
-            router.push(`/groups/${initialData.id}`);
-          },
-          onError: (error) => {
-            setIsSubmitting(false);
-            console.error("Error updating group:", error);
-          }
+        updateGroup.mutate({ id: initialData.id, data: payload }, {
+          onSuccess: () => { router.push(`/groups/${initialData.id}`); },
+          onError: (error) => { setIsSubmitting(false); console.error("Error updating group:", error); }
         });
       } else {
-        // Create new group
-        createGroup.mutate({
-          ...values,
-          sport: primarySport, // For backward compatibility
-        } as any, {
+        createGroup.mutate(payload, {
           onSuccess: (newGroup) => {
-            // Ensure we have a valid ID before redirecting
-            if (newGroup && newGroup.id) {
-              router.push(`/groups/${newGroup.id}`);
-            } else {
-              console.error("Missing group ID in response:", newGroup);
-              router.push('/groups');  // Fallback to groups list if no ID
-            }
+            if (newGroup && newGroup.id) { router.push(`/groups/${newGroup.id}`); } else { console.error("Missing group ID in response:", newGroup); router.push('/groups'); }
           },
-          onError: (error) => {
-            setIsSubmitting(false);
-            console.error("Error creating group:", error);
-          }
+          onError: (error) => { setIsSubmitting(false); console.error("Error creating group:", error); }
         });
       }
     } catch (error) {
@@ -208,6 +221,156 @@ export default function GroupForm({ initialData, isEditing = false }: GroupFormP
               <FormDescription>
                 Gib Details zum Zweck deiner Gruppe, geplanten Aktivitäten und für wen die Gruppe geeignet ist.
               </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="groupTags"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Tags (Optional)</FormLabel>
+              <FormControl>
+                <Input placeholder="z.B. verein, team, fortgeschritten (kommagetrennt)" {...field} />
+              </FormControl>
+              <FormDescription>
+                Kommagetrennte Liste von Schlagwörtern für die Gruppe.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="activityLevel"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Aktivitätslevel (Optional)</FormLabel>
+              <FormControl>
+                <select className="border rounded-md h-10 px-3" value={field.value || ''} onChange={(e) => field.onChange(e.target.value || undefined)}>
+                  <option value="">Auswählen</option>
+                  <option value="low">Niedrig</option>
+                  <option value="medium">Mittel</option>
+                  <option value="high">Hoch</option>
+                </select>
+              </FormControl>
+              <FormDescription>
+                Wie aktiv ist diese Gruppe?
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="requireApproval"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <div className="space-y-1 leading-none">
+                <FormLabel>Eintritt erforderlich</FormLabel>
+                <FormDescription>
+                  Neue Mitglieder müssen von einem bestehenden Mitglied genehmigt werden.
+                </FormDescription>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="allowInvites"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <div className="space-y-1 leading-none">
+                <FormLabel>Einladungen erlauben</FormLabel>
+                <FormDescription>
+                  Neue Mitglieder können sich selbst einladen.
+                </FormDescription>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="contentModeration"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+              <FormControl>
+                <select className="border rounded-md h-10 px-3" value={field.value || ''} onChange={(e) => field.onChange(e.target.value || undefined)}>
+                  <option value="low">Niedrig</option>
+                  <option value="medium">Mittel</option>
+                  <option value="high">Hoch</option>
+                </select>
+              </FormControl>
+              <div className="space-y-1 leading-none">
+                <FormLabel>Inhaltsmoderation</FormLabel>
+                <FormDescription>
+                  Wie streng soll die Inhaltsmoderation sein?
+                </FormDescription>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="allowMemberPosts"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <div className="space-y-1 leading-none">
+                <FormLabel>Mitglieder dürfen Beiträge erstellen</FormLabel>
+                <FormDescription>
+                  Mitglieder können ihre eigenen Beiträge erstellen.
+                </FormDescription>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="allowEventCreation"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+              <div className="space-y-1 leading-none">
+                <FormLabel>Veranstaltungen erstellen</FormLabel>
+                <FormDescription>
+                  Mitglieder können ihre eigenen Veranstaltungen erstellen.
+                </FormDescription>
+              </div>
               <FormMessage />
             </FormItem>
           )}

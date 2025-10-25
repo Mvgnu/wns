@@ -158,7 +158,7 @@ export default function CreatePostPage() {
       if (response.ok) {
         const result = await response.json();
         toast.success('Beitrag erfolgreich erstellt!');
-        router.push(`/posts/${result.id}`);
+        router.push(`/posts/${result.slug || result.id}`);
       } else {
         const error = await response.json();
         toast.error(error.error || 'Fehler beim Erstellen des Beitrags');

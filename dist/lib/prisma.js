@@ -7,7 +7,9 @@ exports.getDatabaseInfo = getDatabaseInfo;
 // This is a standard module file - no 'use server' directive here
 const client_1 = require("@prisma/client");
 // Prevent multiple instances of Prisma Client in development
-exports.prisma = global.prisma || new client_1.PrismaClient();
+exports.prisma = global.prisma || new client_1.PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+});
 if (process.env.NODE_ENV !== 'production')
     global.prisma = exports.prisma;
 exports.default = exports.prisma;
@@ -15,24 +17,6 @@ exports.default = exports.prisma;
 const connectionLogger = (message) => {
     console.log(`[Prisma] ${message}`);
 };
-// Run post-connection hooks after Prisma connects
-exports.prisma.$use(async (params, next) => {
-    const before = Date.now();
-    try {
-        const result = await next(params);
-        const after = Date.now();
-        // Log slow queries in development
-        if (process.env.NODE_ENV === 'development' && (after - before) > 100) {
-            console.log(`Slow query detected (${after - before}ms): ${params.model}.${params.action}`);
-        }
-        return result;
-    }
-    catch (error) {
-        const after = Date.now();
-        console.error(`Query error after ${after - before}ms: ${params.model}.${params.action}`, error);
-        throw error;
-    }
-});
 // Export the client
 async function checkPrismaConnection() {
     try {
