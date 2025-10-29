@@ -34,6 +34,8 @@ interface EventProps {
   }>;
 }
 
+type RSVPStatus = "NONE" | "CONFIRMED" | "WAITLISTED" | "CANCELLED" | "CHECKED_IN" | "NO_SHOW";
+
 export default function EventPage({ params }: EventProps) {
   const { id: eventId } = useParams();
   const router = useRouter();
@@ -44,6 +46,9 @@ export default function EventPage({ params }: EventProps) {
   const [error, setError] = useState<string | null>(null);
   const [isAttending, setIsAttending] = useState(false);
   const [attendeeCount, setAttendeeCount] = useState(0);
+  const [attendanceStatus, setAttendanceStatus] = useState<RSVPStatus>("NONE");
+  const [isWaitlisted, setIsWaitlisted] = useState(false);
+  const [attendanceSummary, setAttendanceSummary] = useState<{ confirmedCount: number; waitlistCount: number; capacity: number | null; isFull: boolean } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
   useEffect(() => {
@@ -57,16 +62,18 @@ export default function EventPage({ params }: EventProps) {
         
         const data = await response.json();
         setEvent(data);
-        
-        // Check if the current user is attending
-        if (session?.user?.id) {
-          const isUserAttending = data.attendees.some(
-            (attendee: any) => attendee.id === session.user.id
-          );
-          setIsAttending(isUserAttending);
+        if (data.attendanceSummary) {
+          setAttendanceSummary(data.attendanceSummary);
+          setAttendeeCount(data.attendanceSummary.confirmedCount);
+        } else {
+          setAttendeeCount(data.attendees?.length ?? 0);
         }
-        
-        setAttendeeCount(data.attendees.length);
+
+        if (data.attendance) {
+          setIsAttending(Boolean(data.attendance.isAttending));
+          setAttendanceStatus(data.attendance.status ?? "NONE");
+          setIsWaitlisted(Boolean(data.attendance.isWaitlisted));
+        }
         setLoading(false);
       } catch (error) {
         console.error('Error fetching event:', error);
@@ -115,8 +122,9 @@ export default function EventPage({ params }: EventProps) {
     setIsLoading(true);
 
     try {
+      const method = isAttending ? 'DELETE' : 'POST';
       const res = await fetch(`/api/events/${eventId}/attend`, {
-        method: isAttending ? 'DELETE' : 'POST',
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -124,24 +132,48 @@ export default function EventPage({ params }: EventProps) {
 
       if (!res.ok) {
         const errorData = await res.json();
-        
+
         // Handle specific errors
         if (res.status === 403 && errorData.error?.includes('member of the group')) {
           throw new Error('Sie müssen Mitglied der Gruppe sein, um an dieser Veranstaltung teilzunehmen');
         }
-        
-        throw new Error('Teilnahmestatus konnte nicht aktualisiert werden');
+
+        throw new Error(errorData.error || 'Teilnahmestatus konnte nicht aktualisiert werden');
       }
 
-      // Update state
-      setIsAttending(!isAttending);
-      setAttendeeCount(prev => isAttending ? prev - 1 : prev + 1);
-      
-      toast({
-        title: isAttending ? 'Sie nehmen nicht mehr teil' : 'Sie nehmen jetzt teil!',
-        description: isAttending ? 'Sie wurden von der Teilnehmerliste entfernt' : 'Sie wurden zur Teilnehmerliste hinzugefügt',
-        variant: 'default',
-      });
+      const payload = await res.json();
+
+      if (payload.summary) {
+        setAttendanceSummary(payload.summary);
+        setAttendeeCount(payload.summary.confirmedCount ?? 0);
+      }
+
+      if (method === 'POST') {
+        const status = (payload.status ?? 'NONE') as RSVPStatus;
+        setAttendanceStatus(status);
+        const nowAttending = status === 'CONFIRMED' || status === 'CHECKED_IN';
+        setIsAttending(nowAttending);
+        setIsWaitlisted(status === 'WAITLISTED');
+        toast({
+          title: nowAttending ? 'Sie nehmen jetzt teil!' : 'Zur Warteliste hinzugefügt',
+          description: status === 'WAITLISTED'
+            ? 'Sie stehen auf der Warteliste und werden benachrichtigt, sobald ein Platz frei wird.'
+            : 'Sie wurden zur Teilnehmerliste hinzugefügt.',
+          variant: 'default',
+        });
+      } else {
+        setIsAttending(false);
+        setAttendanceStatus('NONE');
+        setIsWaitlisted(false);
+        toast({
+          title: 'Sie nehmen nicht mehr teil',
+          description: payload.promotedUserId
+            ? 'Sie wurden entfernt und der nächste in der Warteliste wurde informiert.'
+            : 'Sie wurden von der Teilnehmerliste entfernt.',
+          variant: 'default',
+        });
+      }
+
     } catch (error: any) {
       console.error('Fehler beim Aktualisieren der Teilnahme:', error);
       toast({
@@ -184,11 +216,16 @@ export default function EventPage({ params }: EventProps) {
   
   return (
     <EventDetailClient
-      event={event}
+      event={{
+        ...event,
+        attendanceSummary,
+      }}
       isAttending={isAttending}
+      isWaitlisted={isWaitlisted}
       attendeeCount={attendeeCount}
+      attendanceStatus={attendanceStatus}
       onAttendanceToggle={handleAttendClick}
       isLoading={isLoading}
     />
   );
-} 
+}

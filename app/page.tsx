@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from '@/comp
 import { sportsCategories } from '@/lib/sportsData';
 import HomePageClient from '@/components/home/HomePageClient';
 import { getHomePageData } from '@/lib/dataServices';
+import type { PersonalizedHomeContent } from '@/lib/recommendations/engine';
 
 // This makes Next.js always render the page on the server
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,15 @@ export default async function Home() {
 
   // Serialize the data to make it safe for client rendering
   // Using a typed approach to ensure proper serialization
-  const serializedData = {
+  const serializedData: {
+    sportsByCategory: typeof data.sportsByCategory;
+    groupsCount: number;
+    locationsCount: number;
+    usersCount: number;
+    sportImages: typeof data.sportImages;
+    categoryHighlights: Record<string, CategoryHighlight[]>;
+    personalizedContent: PersonalizedHomeContent;
+  } = {
     sportsByCategory: data.sportsByCategory,
     groupsCount: data.groupsCount,
     locationsCount: data.locationsCount,
@@ -91,15 +100,18 @@ export default async function Home() {
         return [category, serializedHighlights];
       })
     )
+    ,
+    personalizedContent: data.personalizedContent,
   };
 
   // Render the home page with our client component that receives serialized data
-  return <HomePageClient 
+  return <HomePageClient
     sportsByCategory={serializedData.sportsByCategory}
     groupsCount={serializedData.groupsCount}
     locationsCount={serializedData.locationsCount}
     usersCount={serializedData.usersCount}
     categoryHighlights={serializedData.categoryHighlights}
     sportImages={serializedData.sportImages}
+    personalizedContent={serializedData.personalizedContent}
   />;
 }

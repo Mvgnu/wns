@@ -40,3 +40,26 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 *.md
+
+# allow project documentation markdown
+!docs/**/*.md
+!docs/*.md
+!lib/events/README.md
+!app/events/manage/README.md
+!components/home/README.md
+!lib/recommendations/README.md
+!app/groups/manage/README.md
+!lib/groups/README.md
+!lib/payments/README.md
+!components/chat/README.md
+!lib/chat/README.md
+!lib/realtime/README.md
+!app/locations/components/README.md
+!lib/geo/README.md
+!lib/analytics/README.md
+!app/admin/analytics/README.md
+!docs/analytics/**/*.md
+!docs/analytics/README.md
+!docs/operations/**/*.md
+!tests/performance/README.md
+!tests/lib/resilience/README.md

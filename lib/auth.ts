@@ -14,7 +14,17 @@ declare module 'next-auth' {
       email?: string | null;
       image?: string | null;
       isAdmin?: boolean;
+      onboardingStatus?: string;
+      onboardingStep?: string | null;
     }
+  }
+}
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    isAdmin?: boolean;
+    onboardingStatus?: string;
+    onboardingStep?: string | null;
   }
 }
 
@@ -114,23 +124,55 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.sub as string;
-        
+
         // Optionally add additional user data from token
         if (token.isAdmin !== undefined) {
           session.user.isAdmin = token.isAdmin as boolean;
         }
+        if (token.onboardingStatus) {
+          session.user.onboardingStatus = token.onboardingStatus as string;
+        }
+        if (token.onboardingStep !== undefined) {
+          session.user.onboardingStep = token.onboardingStep as string | null;
+        }
       }
       return session;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       // Initial sign in
       if (user) {
         token.sub = user.id;
-        // Add any additional user properties you want in the JWT
-        if ('isAdmin' in user) {
-          token.isAdmin = user.isAdmin;
+      }
+
+      if (trigger === 'update' && session) {
+        if (session.user?.isAdmin !== undefined) {
+          token.isAdmin = session.user.isAdmin;
+        }
+        if (session.user?.onboardingStatus) {
+          token.onboardingStatus = session.user.onboardingStatus;
+        }
+        if (session.user?.onboardingStep !== undefined) {
+          token.onboardingStep = session.user.onboardingStep;
         }
       }
+
+      if (token.sub) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: {
+            isAdmin: true,
+            onboardingStatus: true,
+            onboardingStep: true,
+          },
+        });
+
+        if (dbUser) {
+          token.isAdmin = dbUser.isAdmin;
+          token.onboardingStatus = dbUser.onboardingStatus;
+          token.onboardingStep = dbUser.onboardingStep;
+        }
+      }
+
       return token;
     },
     // Add redirect callback to ensure proper post-authentication redirects

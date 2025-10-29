@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Calendar, Clock, MapPin, Users, Share2, Heart, Edit, Trash2, ChevronLeft, ExternalLink, RefreshCw, Lock, LockOpen, DollarSign, Users2 } from "lucide-react";
+import { Calendar, Clock, MapPin, Users, Share2, Heart, Edit, Trash2, ChevronLeft, ExternalLink, RefreshCw, Lock, LockOpen, DollarSign, Users2, ShieldCheck } from "lucide-react";
 import { format, formatDistanceToNow, differenceInMinutes } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "@/components/ui/use-toast";
@@ -29,6 +29,8 @@ let DefaultIcon = L.icon({
 });
 
 L.Marker.prototype.options.icon = DefaultIcon;
+
+type RSVPStatus = "NONE" | "CONFIRMED" | "WAITLISTED" | "CANCELLED" | "CHECKED_IN" | "NO_SHOW";
 
 // Define the Event type
 interface GroupMember {
@@ -114,27 +116,76 @@ interface EventType {
       image?: string;
     }
   }>;
+  rsvps?: Array<{
+    id: string;
+    userId: string;
+    status: RSVPStatus;
+    user: {
+      id: string;
+      name: string;
+      image?: string;
+    };
+  }>;
+  attendance?: {
+    isAttending?: boolean;
+    isOrganizer?: boolean;
+    status?: RSVPStatus;
+    isWaitlisted?: boolean;
+  };
+  attendanceSummary?: {
+    confirmedCount: number;
+    waitlistCount: number;
+    capacity: number | null;
+    isFull: boolean;
+  } | null;
   url?: string;
 }
 
 interface EventClientProps {
   event: EventType;
   isAttending: boolean;
+  isWaitlisted: boolean;
+  attendanceStatus: RSVPStatus;
   attendeeCount: number;
   onAttendanceToggle: () => Promise<void>;
   isLoading: boolean;
 }
 
-export default function EventDetailClient({ 
-  event, 
-  isAttending, 
-  attendeeCount, 
-  onAttendanceToggle, 
-  isLoading 
+export default function EventDetailClient({
+  event,
+  isAttending,
+  isWaitlisted,
+  attendanceStatus,
+  attendeeCount,
+  onAttendanceToggle,
+  isLoading
 }: EventClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
-  
+
+  const summary = event.attendanceSummary ?? null;
+  const confirmedCount = summary?.confirmedCount ?? attendeeCount ?? 0;
+  const capacity = summary?.capacity ?? null;
+  const waitlistCount = summary?.waitlistCount ?? 0;
+  const attendeesLabel = capacity !== null ? `${confirmedCount} / ${capacity}` : `${confirmedCount}`;
+  const actionLabel = isAttending
+    ? "Teilnahme abmelden"
+    : isWaitlisted
+      ? "Warteliste verlassen"
+      : summary?.isFull
+        ? "Zur Warteliste"
+        : "Teilnehmen";
+  const actionIcon = isAttending ? (
+    <Heart className="h-4 w-4 fill-red-500 text-red-500" />
+  ) : isWaitlisted || summary?.isFull ? (
+    <Clock className="h-4 w-4 text-amber-500" />
+  ) : (
+    <Heart className="h-4 w-4" />
+  );
+  const rsvps = event.rsvps ?? [];
+  const confirmedRsvps = rsvps.filter((entry) => entry.status === "CONFIRMED" || entry.status === "CHECKED_IN");
+  const waitlistedRsvps = rsvps.filter((entry) => entry.status === "WAITLISTED");
+
   const handleShare = async () => {
     const shareData = {
       title: event.title,
@@ -244,6 +295,16 @@ export default function EventDetailClient({
                 Ausverkauft
               </Badge>
             )}
+            {isWaitlisted && !isEventOver && (
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                Warteliste
+              </Badge>
+            )}
+            {attendanceStatus === "CHECKED_IN" && (
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                Eingecheckt
+              </Badge>
+            )}
           </div>
 
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">{event.title}</h1>
@@ -270,21 +331,37 @@ export default function EventDetailClient({
             )}
             <div className="flex items-center">
               <Users className="h-5 w-5 mr-2 text-blue-500" />
-              <span>{attendeeCount || 0} Teilnehmer</span>
+              <div className="flex flex-col leading-tight">
+                <span className="font-medium text-gray-700">
+                  Teilnehmer: {attendeesLabel}
+                </span>
+                {waitlistCount > 0 && (
+                  <span className="text-xs text-amber-600">Warteliste: {waitlistCount}</span>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-3">
             {!isEventOver && (
-              <Button 
+              <Button
                 className="gap-2"
                 disabled={isLoading}
-                variant={isAttending ? "outline" : "default"}
+                variant={isAttending || isWaitlisted ? "outline" : "default"}
                 onClick={onAttendanceToggle}
+                title={
+                  isAttending
+                    ? "Sie haben einen festen Platz für dieses Event."
+                    : isWaitlisted
+                      ? "Sie stehen aktuell auf der Warteliste."
+                      : summary?.isFull
+                        ? "Alle Plätze sind belegt. Tragen Sie sich in die Warteliste ein."
+                        : "Sichern Sie sich Ihren Platz für dieses Event."
+                }
               >
-                <Heart className={`h-4 w-4 ${isAttending ? "fill-red-500 text-red-500" : ""}`} />
-                {isAttending ? "Teilnahme abmelden" : "Teilnehmen"}
+                {actionIcon}
+                {actionLabel}
               </Button>
             )}
 
@@ -298,6 +375,15 @@ export default function EventDetailClient({
                 <Link href={`/groups/${event.group.id}`}>
                   <Users className="h-4 w-4" />
                   Gruppe ansehen
+                </Link>
+              </Button>
+            )}
+
+            {event.attendance?.isOrganizer && (
+              <Button variant="default" className="gap-2" asChild>
+                <Link href={`/events/manage/${event.id}`}>
+                  <ShieldCheck className="h-4 w-4" />
+                  Event verwalten
                 </Link>
               </Button>
             )}
@@ -556,24 +642,54 @@ export default function EventDetailClient({
               {/* Attendees tab */}
               <TabsContent value="attendees" className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <h2 className="text-xl font-bold mb-4">Teilnehmer</h2>
-                
-                {event.attendees && event.attendees.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    {event.attendees.map((attendee) => (
-                      <div 
-                        key={attendee.id} 
-                        className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        <Avatar className="h-16 w-16 mb-2">
-                          <AvatarImage src={attendee.user?.image || undefined} alt={attendee.user?.name || 'User'} />
-                          <AvatarFallback>
-                            {attendee.user?.name?.charAt(0) || "U"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <p className="font-medium text-sm text-center line-clamp-1">{attendee.user?.name || 'Unbekannt'}</p>
+
+                {confirmedRsvps.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {confirmedRsvps.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          <Avatar className="h-16 w-16 mb-2">
+                            <AvatarImage src={entry.user?.image || undefined} alt={entry.user?.name || 'User'} />
+                            <AvatarFallback>
+                              {entry.user?.name?.charAt(0) || "U"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <p className="font-medium text-sm text-center line-clamp-1">{entry.user?.name || 'Unbekannt'}</p>
+                          {entry.status === "CHECKED_IN" && (
+                            <span className="mt-1 text-xs font-medium text-emerald-600">Eingecheckt</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {waitlistedRsvps.length > 0 && (
+                      <div className="mt-8">
+                        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-amber-700">
+                          <Clock className="h-4 w-4" /> Warteliste ({waitlistedRsvps.length})
+                        </h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                          {waitlistedRsvps.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="flex flex-col items-center p-3 rounded-lg border border-amber-100 bg-amber-50/40"
+                            >
+                              <Avatar className="h-16 w-16 mb-2">
+                                <AvatarImage src={entry.user?.image || undefined} alt={entry.user?.name || 'User'} />
+                                <AvatarFallback>
+                                  {entry.user?.name?.charAt(0) || "U"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <p className="font-medium text-sm text-center line-clamp-1">{entry.user?.name || 'Unbekannt'}</p>
+                              <span className="mt-1 text-xs text-amber-600">Wartend</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 ) : (
                   <div className="text-center py-12">
                     <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
@@ -582,14 +698,14 @@ export default function EventDetailClient({
                       Diese Veranstaltung hat noch keine Teilnehmer.
                     </p>
                     {!isEventOver && (
-                      <Button 
+                      <Button
                         className="mt-6"
                         disabled={isLoading}
-                        variant={isAttending ? "outline" : "default"}
+                        variant={isAttending || isWaitlisted ? "outline" : "default"}
                         onClick={onAttendanceToggle}
                       >
-                        <Heart className={`h-4 w-4 mr-2 ${isAttending ? "fill-red-500 text-red-500" : ""}`} />
-                        {isAttending ? "Teilnahme abmelden" : "Sei der erste Teilnehmer"}
+                        {actionIcon}
+                        {isAttending ? "Teilnahme abmelden" : summary?.isFull ? "Zur Warteliste" : "Sei der erste Teilnehmer"}
                       </Button>
                     )}
                   </div>

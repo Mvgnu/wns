@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth";
-import { cookies } from "next/headers";
+import { isFeatureEnabled } from "./featureFlags";
+import { withCircuitBreaker } from "./circuitBreaker";
 
 /**
  * Safely gets the server session and handles JWT decryption errors
@@ -11,7 +12,17 @@ export async function getSafeServerSession() {
   try {
     // First check if a session cookie exists before attempting to decrypt
     // We'll try to get the session from authOptions directly, which avoids dealing with cookie parsing
-    return await getServerSession(authOptions);
+    const useCircuitBreaker = isFeatureEnabled('resilienceCircuitBreakers');
+    if (!useCircuitBreaker) {
+      return await getServerSession(authOptions);
+    }
+
+    return await withCircuitBreaker(
+      'auth.getServerSession',
+      async () => await getServerSession(authOptions),
+      async () => null,
+      { timeoutMs: 3000, failureThreshold: 2, resetTimeoutMs: 15000 }
+    );
   } catch (error) {
     // Handle JWT decryption errors
     if (error instanceof Error && 

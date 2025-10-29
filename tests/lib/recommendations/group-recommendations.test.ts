@@ -32,8 +32,8 @@ describe('group recommendations', () => {
 			interestTags: ['outdoors'],
 		} as any
 
-		const score = await calculateGroupScore(group, user)
-		expect(score.score).toBeGreaterThan(10)
-		expect(score.reasons.join(' ')).toMatch(/matches your interests|close|active|location/i)
-	})
-}) 
+                const score = await calculateGroupScore(group, user, new Map([["tennis", 2]]))
+                expect(score.score).toBeGreaterThan(10)
+                expect(score.reasons.join(' ')).toMatch(/matches your interests|close|active|location/i)
+        })
+})
