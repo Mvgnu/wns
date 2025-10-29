@@ -37,6 +37,7 @@ interface LocationType {
 
 interface Location {
   id: string;
+  slug: string | null;
   name: string;
   description: string | null;
   placeType: string;
@@ -50,6 +51,8 @@ interface Location {
   latitude: number;
   longitude: number;
   image: string | null;
+  priceRange?: string | null;
+  difficulty?: string | null;
   amenities: any[];
   _count: {
     reviews: number;

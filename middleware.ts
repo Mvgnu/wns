@@ -60,7 +60,21 @@ export async function middleware(request: NextRequest) {
       secret: process.env.NEXTAUTH_SECRET,
     });
 
-    // Continue normally if we got a token or not
+    // Enforce onboarding completion for authenticated users
+    if (token?.sub) {
+      const onboardingStatus = (token as any).onboardingStatus ?? 'pending';
+      const isOnboardingPath = path.startsWith('/onboarding') || path.startsWith('/api/onboarding');
+      const isAuthPath = path.startsWith('/auth');
+
+      if (onboardingStatus !== 'completed' && !isOnboardingPath && !isAuthPath && !path.startsWith('/api/auth')) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/onboarding';
+        url.search = '';
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // Continue normally if onboarding gate passes
     return NextResponse.next();
   } catch (error) {
     console.warn('JWT validation error in middleware:', error);

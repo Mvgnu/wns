@@ -243,6 +243,7 @@ export default async function LocationsPage({
     // Transform the location to match the LocationsClientWrapper interface
     return {
       id: location.id,
+      slug: location.slug,
       name: location.name,
       description: location.description,
       placeType: location.placeType,

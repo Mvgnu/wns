@@ -21,6 +21,8 @@ import GroupPostsList from '@/components/groups/GroupPostsList';
 import GroupClientWrapper from './GroupClientWrapper';
 import ShareButtonClient from './ShareButtonClient';
 import InviteCodeClient from './InviteCodeClient';
+import { GroupChatPanel } from '@/components/chat/GroupChatPanel';
+import { listGroupConversations, listGroupThreads } from '@/lib/chat/service';
 
 type Props = {
   params: {
@@ -506,6 +508,63 @@ export default async function GroupPage({ params }: { params: { slug: string } }
     return 'Öffentlich';
   };
 
+  const canAccessChat = Boolean(userId && (isMember || isOwner || isAdmin));
+  const isModeratorForChat = Boolean(isOwner || isAdmin);
+
+  let initialChatConversations: Array<{
+    id: string;
+    slug: string;
+    title: string | null;
+    description: string | null;
+    isDefault: boolean;
+    messageCount: number;
+    participantCount: number;
+  }> = [];
+
+  let initialChatThreads: Array<{
+    id: string;
+    title: string;
+    content: string;
+    status: string;
+    moderationState: string;
+    replyCount: number;
+    lastActivityAt: string;
+    createdBy: {
+      id: string;
+      name: string | null;
+      image: string | null;
+    };
+  }> = [];
+
+  if (canAccessChat && userId) {
+    const conversationsData = await listGroupConversations(group.id, userId);
+    initialChatConversations = conversationsData.map((conversation) => ({
+      id: conversation.id,
+      slug: conversation.slug,
+      title: conversation.title,
+      description: conversation.description ?? null,
+      isDefault: conversation.isDefault,
+      messageCount: conversation.messageCount,
+      participantCount: conversation.participantCount,
+    }));
+
+    const threadsData = await listGroupThreads(group.id, userId, 20);
+    initialChatThreads = threadsData.map((thread) => ({
+      id: thread.id,
+      title: thread.title,
+      content: thread.content,
+      status: thread.status,
+      moderationState: thread.moderationState,
+      replyCount: thread.replyCount,
+      lastActivityAt: thread.lastActivityAt.toISOString(),
+      createdBy: {
+        id: thread.createdBy?.id ?? '',
+        name: thread.createdBy?.name ?? null,
+        image: thread.createdBy?.image ?? null,
+      },
+    }));
+  }
+
   return (
     <div className="relative pb-20">
       {/* Subtle background elements */}
@@ -719,6 +778,13 @@ export default async function GroupPage({ params }: { params: { slug: string } }
                       </Link>
                     </Button>
 
+                    <Button variant="outline" size="sm" className="w-full justify-start" asChild>
+                      <Link href={`/groups/manage/${group.slug || group.id}`}>
+                        <Activity className="h-4 w-4 mr-2" />
+                        Organizer Console
+                      </Link>
+                    </Button>
+
                     {isOwner && group.inviteCode && (
                       <InviteCodeClient inviteCode={group.inviteCode} />
                     )}
@@ -761,10 +827,11 @@ export default async function GroupPage({ params }: { params: { slug: string } }
 
               <Tabs defaultValue="posts" className="w-full">
                 <div className="px-5 pt-4">
-                  <TabsList className="grid w-full grid-cols-3">
+                  <TabsList className={`grid w-full ${canAccessChat ? 'grid-cols-4' : 'grid-cols-3'}`}>
                     <TabsTrigger value="posts">Posts</TabsTrigger>
                     <TabsTrigger value="events">Events</TabsTrigger>
                     <TabsTrigger value="members">Mitglieder</TabsTrigger>
+                    {canAccessChat && <TabsTrigger value="chat">Chat</TabsTrigger>}
                   </TabsList>
                 </div>
 
@@ -981,6 +1048,17 @@ export default async function GroupPage({ params }: { params: { slug: string } }
                     )}
                   </div>
                 </TabsContent>
+                {canAccessChat && (
+                  <TabsContent value="chat" className="p-5">
+                    <GroupChatPanel
+                      groupSlug={group.slug || group.id}
+                      userId={userId as string}
+                      initialConversations={initialChatConversations}
+                      initialThreads={initialChatThreads}
+                      isModerator={isModeratorForChat}
+                    />
+                  </TabsContent>
+                )}
               </Tabs>
             </div>
           </div>

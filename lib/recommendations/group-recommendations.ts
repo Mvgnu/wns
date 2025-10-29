@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import geolib from 'geolib';
 import { User, Group } from '@prisma/client';
+import { getAffinityWeights, recordSportAffinity } from '@/lib/recommendations/affinity';
 
 type RecommendationScore = {
   group: Group;
@@ -11,20 +12,30 @@ type RecommendationScore = {
 /**
  * Calculate a recommendation score for a group based on user preferences
  */
-export async function calculateGroupScore(group: Group, user: User): Promise<RecommendationScore> {
+export async function calculateGroupScore(
+  group: Group,
+  user: User,
+  affinityWeights?: Map<string, number>
+): Promise<RecommendationScore> {
   const score: RecommendationScore = {
     group,
     score: 0,
     reasons: [],
   };
-  
+
   // Base score for all groups
   score.score += 10;
-  
+
   // Check if sport matches user interests
   if (user.sports && user.sports.includes(group.sport)) {
     score.score += 30;
     score.reasons.push(`Sport (${group.sport}) matches your interests`);
+  }
+
+  const affinityWeight = affinityWeights?.get(group.sport);
+  if (typeof affinityWeight === 'number' && affinityWeight !== 0) {
+    score.score += Math.min(affinityWeight * 5, 35);
+    score.reasons.push('Affinity boosted from past activity');
   }
   
   // Check location proximity if coordinates are available
@@ -85,8 +96,8 @@ export async function calculateGroupScore(group: Group, user: User): Promise<Rec
   }
   
   // Check for matching tags
-  if (user.interestTags && group.groupTags) {
-    const matchingTags = user.interestTags.filter(tag => 
+  if (user.interestTags && group.groupTags?.length) {
+    const matchingTags = user.interestTags.filter(tag =>
       group.groupTags.includes(tag)
     );
     
@@ -156,8 +167,10 @@ export async function getGroupRecommendations(userId: string, limit = 5): Promis
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
-    
+
     if (!user) throw new Error('User not found');
+
+    const affinityWeights = await getAffinityWeights(userId);
     
     // Get groups user is not already a member of
     const groups = await prisma.group.findMany({
@@ -197,7 +210,7 @@ export async function getGroupRecommendations(userId: string, limit = 5): Promis
     const recommendationScores: RecommendationScore[] = [];
     
     for (const group of groups) {
-      const score = await calculateGroupScore(group, user);
+      const score = await calculateGroupScore(group, user, affinityWeights);
       recommendationScores.push(score);
     }
     
@@ -230,7 +243,30 @@ export async function logRecommendationInteraction(
         rating,
       },
     });
+
+    const group = await prisma.group.findUnique({
+      where: { id: groupId },
+      select: { sport: true },
+    });
+
+    if (group?.sport) {
+      const interactionWeights: Record<'viewed' | 'clicked' | 'joined' | 'dismissed', number> = {
+        viewed: 0.5,
+        clicked: 1.5,
+        joined: 4,
+        dismissed: -3,
+      };
+
+      let delta = interactionWeights[interaction];
+      if (typeof rating === 'number' && !Number.isNaN(rating)) {
+        delta += rating * 0.5;
+      }
+
+      if (delta !== 0) {
+        await recordSportAffinity(userId, group.sport, delta);
+      }
+    }
   } catch (error) {
     console.error('Error logging recommendation interaction:', error);
   }
-} 
+}

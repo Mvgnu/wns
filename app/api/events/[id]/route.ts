@@ -6,6 +6,8 @@ import { getSafeServerSession } from "@/lib/sessionHelper";
 import prisma from "@/lib/prisma";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { buildAttendanceSummary } from "@/lib/events/rsvp";
+import { EventRSVPStatus } from "@prisma/client";
 
 function isPromiseLike<T>(x: any): x is Promise<T> { return typeof x?.then === 'function'; }
 async function resolveParams(paramsOrPromise: any): Promise<{ id?: string }> {
@@ -91,6 +93,7 @@ export async function GET(
           select: {
             id: true,
             name: true,
+            slug: true,
             sport: true,
             image: true,
             isPrivate: true,
@@ -110,28 +113,49 @@ export async function GET(
           },
         },
         attendees: { select: { id: true, name: true, image: true }, take: 20 },
+        rsvps: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                image: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
         _count: { select: { attendees: true } },
       },
     });
     
     // Check if the current user is attending
-    let attendance = { isAttending: false, isOrganizer: false };
-    
+    let attendance = {
+      isAttending: false,
+      isOrganizer: false,
+      status: "NONE" as "NONE" | EventRSVPStatus,
+      isWaitlisted: false,
+    };
+
     if (session?.user && event) {
       attendance.isOrganizer = event.organizerId === userId;
-      
-      if (!attendance.isOrganizer) {
-        // Check if user is in attendees
-        const attendee = await prisma.event.findFirst({
-          where: { id: eventId, attendees: { some: { id: userId } } },
-        });
-        attendance.isAttending = !!attendee;
-      } else {
-        attendance.isAttending = true; // Organizer is automatically attending
+
+      if (attendance.isOrganizer) {
+        attendance.isAttending = true;
+        attendance.status = EventRSVPStatus.CONFIRMED;
+      } else if (event.rsvps) {
+        const userRsvp = event.rsvps.find((record) => record.userId === userId);
+        if (userRsvp) {
+          attendance.isAttending = userRsvp.status === EventRSVPStatus.CONFIRMED || userRsvp.status === EventRSVPStatus.CHECKED_IN;
+          attendance.status = userRsvp.status;
+          attendance.isWaitlisted = userRsvp.status === EventRSVPStatus.WAITLISTED;
+        }
       }
     }
-    
-    return NextResponse.json({ ...event, attendance });
+
+    const summary = await buildAttendanceSummary(eventId);
+
+    return NextResponse.json({ ...event, attendance, attendanceSummary: summary });
   } catch (error) {
     console.error("Error fetching event:", error);
     return NextResponse.json(

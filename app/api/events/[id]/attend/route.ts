@@ -5,6 +5,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSafeServerSession } from "@/lib/sessionHelper";
 import { sendNotificationToUser } from "@/lib/notificationService";
+import { buildAttendanceSummary, cancelRsvp, commitRsvp, RsvpError } from "@/lib/events/rsvp";
+import { EventRSVPStatus } from "@prisma/client";
 
 // POST handler for joining an event
 export async function POST(
@@ -31,17 +33,21 @@ export async function POST(
 
     const userId = session.user.id;
 
-    // Check if event exists
     const event = await prisma.event.findUnique({
       where: { id: eventId },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        organizerId: true,
+        joinRestriction: true,
+        groupId: true,
+        group: true,
         organizer: {
           select: {
             id: true,
             name: true,
           },
         },
-        group: true
       },
     });
 
@@ -54,7 +60,7 @@ export async function POST(
 
     // Access the join restriction directly (bypass TypeScript type checking)
     const joinRestriction = (event as any).joinRestriction;
-    
+
     // Check join restrictions for group-only events
     if (joinRestriction === "groupOnly" && event.groupId) {
       // Check if user is a member of the group
@@ -66,7 +72,7 @@ export async function POST(
           }
         }
       });
-      
+
       if (!isMember) {
         return NextResponse.json(
           { error: "You must be a member of the group to join this event" },
@@ -75,51 +81,42 @@ export async function POST(
       }
     }
 
-    // Check if user is already attending
-    const isAttending = await prisma.event.findFirst({
-      where: {
-        id: eventId,
-        attendees: {
-          some: { id: userId },
-        },
-      },
-    });
+    try {
+      const rsvpResult = await commitRsvp(eventId, userId);
+      const summary = await buildAttendanceSummary(eventId);
 
-    if (isAttending) {
-      return NextResponse.json(
-        { error: "Already attending this event" },
-        { status: 400 }
-      );
+      if (event.organizerId !== userId) {
+        const notification = await prisma.notification.create({
+          data: {
+            userId: event.organizerId,
+            type: "EVENT_JOIN",
+            message:
+              rsvpResult.status === EventRSVPStatus.WAITLISTED
+                ? `${session.user.name || "Someone"} joined the waitlist for your event: ${event.title}`
+                : `${session.user.name || "Someone"} is now attending your event: ${event.title}`,
+            linkUrl: `/events/${eventId}`,
+            actorId: userId,
+            read: false,
+          },
+        });
+
+        sendNotificationToUser(event.organizerId, notification);
+      }
+
+      return NextResponse.json({
+        success: true,
+        status: rsvpResult.status,
+        waitlisted: rsvpResult.waitlisted,
+        summary,
+      });
+    } catch (error) {
+      if (error instanceof RsvpError) {
+        const statusCode =
+          error.code === "WAITLIST_DISABLED" ? 409 : error.code === "ALREADY_CONFIRMED" ? 400 : 400;
+        return NextResponse.json({ error: error.message, code: error.code }, { status: statusCode });
+      }
+      throw error;
     }
-
-    // Add user as an attendee
-    await prisma.event.update({
-      where: { id: eventId },
-      data: {
-        attendees: {
-          connect: { id: userId },
-        },
-      },
-    });
-
-    // Create notification in database
-    const notification = await prisma.notification.create({
-      data: {
-        userId: event.organizerId,
-        type: "EVENT_JOIN",
-        message: `${session.user.name || "Someone"} is now attending your event: ${event.title}`,
-        linkUrl: `/events/${eventId}`,
-        actorId: userId,
-        read: false,
-      },
-    });
-
-    // Send real-time notification to event organizer
-    if (event.organizerId !== userId) {
-      sendNotificationToUser(event.organizerId, notification);
-    }
-
-    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error joining event:", error);
     return NextResponse.json(
@@ -154,54 +151,18 @@ export async function DELETE(
 
     const userId = session.user.id;
 
-    // Check if event exists
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-    });
-
-    if (!event) {
-      return NextResponse.json(
-        { error: "Event not found" },
-        { status: 404 }
-      );
+    try {
+      const result = await cancelRsvp(eventId, userId);
+      const summary = await buildAttendanceSummary(eventId);
+      return NextResponse.json({ success: true, status: result.status, summary, promotedUserId: result.promotedUserId });
+    } catch (error) {
+      if (error instanceof RsvpError) {
+        const statusCode =
+          error.code === "ORGANIZER_CANNOT_LEAVE" ? 400 : error.code === "NOT_ATTENDING" ? 400 : 404;
+        return NextResponse.json({ error: error.message, code: error.code }, { status: statusCode });
+      }
+      throw error;
     }
-
-    // Check if user is the organizer (can't leave your own event)
-    if (event.organizerId === userId) {
-      return NextResponse.json(
-        { error: "Organizers cannot leave their own events" },
-        { status: 400 }
-      );
-    }
-
-    // Check if user is attending
-    const isAttending = await prisma.event.findFirst({
-      where: {
-        id: eventId,
-        attendees: {
-          some: { id: userId },
-        },
-      },
-    });
-
-    if (!isAttending) {
-      return NextResponse.json(
-        { error: "Not attending this event" },
-        { status: 400 }
-      );
-    }
-
-    // Remove user from attendees
-    await prisma.event.update({
-      where: { id: eventId },
-      data: {
-        attendees: {
-          disconnect: { id: userId },
-        },
-      },
-    });
-
-    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error leaving event:", error);
     return NextResponse.json(

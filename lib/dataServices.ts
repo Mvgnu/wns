@@ -6,6 +6,9 @@ import { getSportsByCategory } from './sportsData';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 import { Prisma } from '@prisma/client';
+import { getPersonalizedHomeContent } from '@/lib/recommendations/engine';
+import { isFeatureEnabled } from './featureFlags';
+import { withCircuitBreaker } from './circuitBreaker';
 
 /**
  * Data fetching service for the homepage
@@ -21,20 +24,27 @@ export async function getHomePageData() {
     const sportsByCategory = getSportsByCategory();
     
     // Fetch important stats - only count public entities for non-logged in users
-    const statsPromises = [
-      // For groups, only count public ones for non-logged in users
-      prisma.group.count({
-        where: userId ? undefined : { isPrivate: false }
-      }),
-      
-      // For locations, all are public
-      prisma.location.count(),
-      
-      // For users, all user counts are public
-      prisma.user.count()
-    ];
-    
-    const [groupsCount, locationsCount, usersCount] = await Promise.all(statsPromises);
+    const statsFallback: [number, number, number] = [0, 0, 0];
+    const [groupsCount, locationsCount, usersCount] = await withCircuitBreaker(
+      'homepage.stats',
+      async () =>
+        await Promise.all([
+          // For groups, only count public ones for non-logged in users
+          prisma.group.count({
+            where: userId ? undefined : { isPrivate: false }
+          }),
+          // For locations, all are public
+          prisma.location.count(),
+          // For users, all user counts are public
+          prisma.user.count()
+        ]),
+      async () => statsFallback
+    );
+
+    const personalizationEnabled = isFeatureEnabled('personalizedHome');
+    const personalizedContentPromise = personalizationEnabled
+      ? getPersonalizedHomeContent(userId ?? undefined)
+      : getPersonalizedHomeContent(undefined);
     
     // Get most popular groups for each sport category
     const categoryHighlights: Record<string, any> = {};
@@ -77,64 +87,74 @@ export async function getHomePageData() {
               }
               
               // Get most popular group for this specific sport
-              const topGroup = await prisma.group.findFirst({
-                where: groupWhereInput,
-                orderBy: {
-                  members: {
-                    _count: 'desc'
-                  }
-                },
-                select: {
-                  id: true,
-                  name: true,
-                  description: true,
-                  image: true,
-                  sport: true,
-                  location: true,
-                  isPrivate: true,
-                  createdAt: true,
-                  updatedAt: true,
-                  ownerId: true,
-                  _count: {
-                    select: { members: true }
-                  }
-                },
-                take: 1
-              });
-              
-              // Get upcoming event for this specific sport
-              const upcomingEvent = await prisma.event.findFirst({
-                where: {
-                  group: groupWhereInput,
-                  startTime: {
-                    gte: new Date()
-                  }
-                },
-                orderBy: {
-                  startTime: 'asc'
-                },
-                select: {
-                  id: true,
-                  title: true,
-                  description: true,
-                  startTime: true,
-                  endTime: true,
-                  image: true,
-                  location: true,
-                  createdAt: true,
-                  updatedAt: true,
-                  group: {
+              const topGroup = await withCircuitBreaker(
+                `homepage.topGroup.${sport.value}`,
+                async () =>
+                  prisma.group.findFirst({
+                    where: groupWhereInput,
+                    orderBy: {
+                      members: {
+                        _count: 'desc'
+                      }
+                    },
                     select: {
                       id: true,
                       name: true,
+                      description: true,
                       image: true,
                       sport: true,
-                      isPrivate: true
-                    }
-                  }
-                },
-                take: 1
-              });
+                      location: true,
+                      isPrivate: true,
+                      createdAt: true,
+                      updatedAt: true,
+                      ownerId: true,
+                      _count: {
+                        select: { members: true }
+                      }
+                    },
+                    take: 1
+                  }),
+                async () => null
+              );
+              
+              // Get upcoming event for this specific sport
+              const upcomingEvent = await withCircuitBreaker(
+                `homepage.upcomingEvent.${sport.value}`,
+                async () =>
+                  prisma.event.findFirst({
+                    where: {
+                      group: groupWhereInput,
+                      startTime: {
+                        gte: new Date()
+                      }
+                    },
+                    orderBy: {
+                      startTime: 'asc'
+                    },
+                    select: {
+                      id: true,
+                      title: true,
+                      description: true,
+                      startTime: true,
+                      endTime: true,
+                      image: true,
+                      location: true,
+                      createdAt: true,
+                      updatedAt: true,
+                      group: {
+                        select: {
+                          id: true,
+                          name: true,
+                          image: true,
+                          sport: true,
+                          isPrivate: true
+                        }
+                      }
+                    },
+                    take: 1
+                  }),
+                async () => null
+              );
               
               return {
                 sport: sport.value,
@@ -170,13 +190,16 @@ export async function getHomePageData() {
       sportImages[sport.value] = `/images/sports/sport-${sport.value}.jpg`;
     });
     
+    const personalizedContent = await personalizedContentPromise;
+
     return {
       sportsByCategory,
       groupsCount,
       locationsCount,
       usersCount,
       categoryHighlights,
-      sportImages
+      sportImages,
+      personalizedContent
     };
   } catch (error) {
     console.error('Error in getHomePageData:', error);
@@ -187,7 +210,8 @@ export async function getHomePageData() {
       locationsCount: 0,
       usersCount: 0,
       categoryHighlights: {},
-      sportImages: {}
+      sportImages: {},
+      personalizedContent: await getPersonalizedHomeContent(undefined)
     };
   }
-} 
+}

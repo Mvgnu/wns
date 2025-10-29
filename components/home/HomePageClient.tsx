@@ -5,12 +5,12 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { sportsCategories } from '@/lib/sportsData';
 import { Sport } from '@/lib/sportsData';
-import GroupRecommendations from '@/components/groups/GroupRecommendations';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Users, MapPin, Clock } from 'lucide-react';
+import type { PersonalizedHomeContent } from '@/lib/recommendations/engine';
+import { Calendar, Users, MapPin, Clock, Flame, Sparkles, TrendingUp } from 'lucide-react';
 
 // Type definitions for our props
 interface SportHighlight {
@@ -41,6 +41,7 @@ interface HomePageClientProps {
   usersCount: number;
   categoryHighlights: Record<string, SportHighlight[]>;
   sportImages: Record<string, string>;
+  personalizedContent: PersonalizedHomeContent;
 }
 
 // This is a client component that renders the page UI with pre-fetched data
@@ -50,9 +51,25 @@ export default function HomePageClient({
   locationsCount,
   usersCount,
   categoryHighlights,
-  sportImages
+  sportImages,
+  personalizedContent
 }: HomePageClientProps) {
   const { data: session } = useSession();
+
+  const formatDateTime = (iso: string) => {
+    try {
+      return new Intl.DateTimeFormat('de-DE', {
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit'
+      }).format(new Date(iso));
+    } catch (error) {
+      console.error('Failed to format date', error);
+      return iso;
+    }
+  };
 
   // Helper function to safely find a sport highlight in the category
   const findSportHighlight = (category: string, sportValue: string): SportHighlight | undefined => {
@@ -151,15 +168,138 @@ export default function HomePageClient({
         <div className="absolute inset-0 bg-black opacity-10"></div>
       </section>
 
-      {/* Group Recommendations for logged in users */}
-      {session?.user && (
-        <section className="py-16 bg-white">
-          <div className="container mx-auto px-4">
-            <h2 className="text-3xl font-bold mb-8">Empfohlene Gruppen für dich</h2>
-            <GroupRecommendations />
+      {/* Personalized Spotlight */}
+      <section className="py-16 bg-gray-50">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div>
+              <Badge className="bg-blue-100 text-blue-700 flex items-center gap-2 px-4 py-2">
+                {personalizedContent.mode === 'personalized' ? (
+                  <>
+                    <Sparkles className="h-4 w-4" /> Für dich zusammengestellt
+                  </>
+                ) : (
+                  <>
+                    <TrendingUp className="h-4 w-4" /> Trendende Highlights
+                  </>
+                )}
+              </Badge>
+              <h2 className="text-3xl md:text-4xl font-bold mt-4 text-gray-900">
+                {personalizedContent.mode === 'personalized'
+                  ? 'Deine nächsten Schritte in der Community'
+                  : 'Was gerade angesagt ist'}
+              </h2>
+              <p className="text-gray-600 mt-4 max-w-2xl">
+                Wir kombinieren deine Interessen mit aktiven Gruppen und Events, damit du schnell Anschluss findest.
+              </p>
+              {!session?.user && personalizedContent.mode === 'trending' && (
+                <p className="text-sm text-blue-600 mt-2">
+                  Melde dich an, um maßgeschneiderte Empfehlungen zu erhalten.
+                </p>
+              )}
+            </div>
+            {personalizedContent.spotlightSports.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {personalizedContent.spotlightSports.map((spot) => (
+                  <div key={`${spot.source}-${spot.sport}`} className="rounded-full bg-white shadow-sm border border-blue-100 px-4 py-2 flex items-center gap-2">
+                    <Flame className="h-4 w-4 text-blue-500" />
+                    <span className="font-medium text-gray-900">{spot.sport}</span>
+                    <span className="text-xs uppercase tracking-wide text-blue-500">{spot.source}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </section>
-      )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mt-10">
+            <Card className="shadow-lg border-blue-100">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-2xl">Empfohlene Gruppen</CardTitle>
+                  <Badge variant="outline" className="border-blue-200 text-blue-700">
+                    {personalizedContent.groups.length > 0 ? `${personalizedContent.groups.length} Vorschläge` : 'Noch keine Daten'}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  {personalizedContent.mode === 'personalized'
+                    ? 'Basierend auf deinen Vorlieben und Aktivitäten'
+                    : 'Beliebte Gruppen in der Community'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {personalizedContent.groups.length === 0 && (
+                  <div className="text-muted-foreground text-sm">
+                    Aktualisiere dein Profil mit Interessen, um personalisierte Empfehlungen zu erhalten.
+                  </div>
+                )}
+                {personalizedContent.groups.slice(0, 4).map((group) => (
+                  <div key={group.id} className="p-4 rounded-lg border border-blue-100 bg-blue-50/40">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">{group.name}</h3>
+                        <p className="text-sm text-gray-600 line-clamp-2 mt-1">{group.description ?? 'Beschreibung folgt bald.'}</p>
+                      </div>
+                      <Badge className="bg-blue-600 text-white">{group.sport}</Badge>
+                    </div>
+                    <div className="flex items-center gap-4 mt-4 text-sm text-gray-600">
+                      <span className="flex items-center gap-1"><Users className="h-4 w-4" />{group.memberCount} Mitglieder</span>
+                      <span className="flex items-center gap-1"><Sparkles className="h-4 w-4" />Score {Math.round(group.score)}</span>
+                    </div>
+                    {group.reasons.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-sm text-gray-500">
+                        {group.reasons.slice(0, 2).map((reason, index) => (
+                          <li key={`${group.id}-reason-${index}`}>• {reason}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg border-blue-100">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-2xl">Empfohlene Events</CardTitle>
+                  <Badge variant="outline" className="border-blue-200 text-blue-700">
+                    {personalizedContent.events.length > 0 ? `${personalizedContent.events.length} Vorschläge` : 'Noch keine Daten'}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  Nimm an Aktivitäten teil, die zu deinen Interessen und deiner Region passen.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {personalizedContent.events.length === 0 && (
+                  <div className="text-muted-foreground text-sm">
+                    Sobald Gruppen in deiner Nähe Events planen, erscheinen sie hier automatisch.
+                  </div>
+                )}
+                {personalizedContent.events.slice(0, 4).map((event) => (
+                  <div key={event.id} className="p-4 rounded-lg border border-blue-100 bg-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">{event.title}</h3>
+                        <p className="text-sm text-gray-600 mt-1">{event.groupName ?? 'Community Event'}</p>
+                      </div>
+                      {event.sport && (
+                        <Badge className="bg-indigo-600 text-white">{event.sport}</Badge>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 text-sm text-gray-600">
+                      <div className="flex items-center gap-2"><Calendar className="h-4 w-4" />{formatDateTime(event.startTime)}</div>
+                      {(event.city || event.state) && (
+                        <div className="flex items-center gap-2"><MapPin className="h-4 w-4" />{[event.city, event.state].filter(Boolean).join(', ')}</div>
+                      )}
+                      <div className="flex items-center gap-2"><Flame className="h-4 w-4" />Score {Math.round(event.score)}</div>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
 
       {/* Sports Categories Sections */}
       {sportsCategories.map((category, index) => (
@@ -185,7 +325,7 @@ export default function HomePageClient({
                 </div>
                 <h2 className="text-3xl md:text-4xl font-bold mb-4 text-gray-900">Entdecke {category}</h2>
                 <p className="text-gray-600 text-lg leading-relaxed">
-                  Tauche ein in die vielfältige Welt des {category.toLowerCase()}s. 
+                  Tauche ein in die vielfältige Welt des {category.toLowerCase()}s.
                   Finde Gleichgesinnte, entdecke neue Orte und erlebe gemeinsame Aktivitäten.
                 </p>
               </div>
