@@ -143,3 +143,4 @@ describe('CreateEventForm', () => {
     expect(screen.getByTestId('group-selection')).toBeInTheDocument();
   });
 });
+
