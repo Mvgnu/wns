@@ -1,10 +1,11 @@
-import '@testing-library/jest-dom'
+import { vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import LocationsClientWrapper from '@/app/locations/components/LocationsClientWrapper'
 
-jest.mock('next/navigation', () => {
-	const push = jest.fn()
+vi.mock('next/navigation', () => {
+	const push = vi.fn()
 	const useSearchParams = () => new URLSearchParams('')
 	return { useRouter: () => ({ push }), useSearchParams }
 })

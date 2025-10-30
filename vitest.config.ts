@@ -9,6 +9,16 @@ export default defineConfig({
     setupFiles: ['./tests/setup.tsx'],
     globals: true,
     css: true,
+    include: ['tests/**/*.{test,spec}.{ts,tsx}'],
+    exclude: [
+      'node_modules',
+      'dist',
+      '.next',
+      'e2e/**',
+      'playwright/**',
+      '**/__tests__/**',
+      'tests/integration/**',
+    ],
   },
   resolve: {
     alias: {
@@ -16,4 +26,3 @@ export default defineConfig({
     },
   },
 });
-

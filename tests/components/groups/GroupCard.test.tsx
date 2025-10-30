@@ -1,7 +1,11 @@
+import { vi } from 'vitest';
 import { render, screen } from '@testing-library/react'
 import GroupCard from '@/components/groups/GroupCard'
 
-jest.mock('next/image', () => (props: any) => <img alt={props.alt || ''} />)
+vi.mock('next/image', () => ({
+        __esModule: true,
+        default: (props: any) => <img alt={props.alt || ''} />
+}))
 
 describe('GroupCard', () => {
 	it('renders key group info', () => {

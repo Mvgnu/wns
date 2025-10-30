@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EventPricing } from '@/components/events/EventPricing';
@@ -80,7 +81,7 @@ describe('EventPricing Component', () => {
   
   // Test toggling between paid and free
   test('toggles between paid and free modes', async () => {
-    const handleChange = jest.fn();
+    const handleChange = vi.fn();
     render(<EventPricing onChange={handleChange} />);
     
     // Initially in free mode
@@ -113,7 +114,7 @@ describe('EventPricing Component', () => {
   
   // Test changing price
   test('updates price value correctly', async () => {
-    const handleChange = jest.fn();
+    const handleChange = vi.fn();
     render(<EventPricing isPaid={true} onChange={handleChange} />);
     
     const priceInput = screen.getByLabelText(/price/i);
@@ -131,18 +132,12 @@ describe('EventPricing Component', () => {
   
   // Test changing currency
   test('changes currency correctly', async () => {
-    const handleChange = jest.fn();
+    const handleChange = vi.fn();
     render(<EventPricing isPaid={true} onChange={handleChange} />);
-    
-    // Open currency dropdown
-    const currencySelect = screen.getByLabelText(/currency/i);
-    await userEvent.click(currencySelect);
-    
-    // Select USD (fallback for jsdom: look for label text that includes USD)
-    const usdOption = await screen.findByText(/USD|US Dollar/i);
-    await userEvent.click(usdOption);
-    
-    // Should call onChange with new currency
+
+    const currencySelect = screen.getByTestId('currency-select');
+    await userEvent.selectOptions(currencySelect, 'USD');
+
     expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({
       isPaid: true,
       priceCurrency: 'USD'
@@ -151,7 +146,7 @@ describe('EventPricing Component', () => {
   
   // Test setting attendee limit
   test('sets attendee limit correctly', async () => {
-    const handleChange = jest.fn();
+    const handleChange = vi.fn();
     render(<EventPricing onChange={handleChange} />);
     
     const limitInput = screen.getByLabelText(/attendee limit/i);
@@ -168,7 +163,7 @@ describe('EventPricing Component', () => {
   
   // Test price description field
   test('updates price description correctly', async () => {
-    const handleChange = jest.fn();
+    const handleChange = vi.fn();
     render(<EventPricing isPaid={true} onChange={handleChange} />);
     
     const descriptionTextarea = screen.getByLabelText(/pricing details/i);

@@ -1,5 +1,6 @@
 'use client';
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -55,13 +56,10 @@ export interface RichTextEditorProps {
   readOnly?: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const RichTextEditor = forwardRef<any, RichTextEditorProps>(
+const RichTextEditor = forwardRef<Editor | null, RichTextEditorProps>(
   ({ defaultValue = '', onChange, placeholder, dark, autoFocus, readOnly = false }, ref) => {
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [editor, setEditor] = useState<any>(null);
     
     const handleImageUpload = useCallback(async (file: File) => {
       // Create FormData for the file upload
@@ -88,34 +86,34 @@ const RichTextEditor = forwardRef<any, RichTextEditorProps>(
     }, []);
     
     const insertImage = useCallback(async () => {
-      if (!editor || !selectedImage) return;
-      
+      if (!tiptapEditor || !selectedImage) return;
+
       try {
         const imageUrl = await handleImageUpload(selectedImage);
         if (imageUrl) {
-          editor.chain().focus().setImage({ src: imageUrl, alt: selectedImage.name }).run();
+          tiptapEditor.chain().focus().setImage({ src: imageUrl, alt: selectedImage.name }).run();
         }
         setSelectedImage(null);
       } catch (error) {
         console.error('Error inserting image:', error);
       }
-    }, [editor, selectedImage, handleImageUpload]);
-    
+    }, [tiptapEditor, selectedImage, handleImageUpload]);
+
     const addYoutubeVideo = useCallback(() => {
-      if (!editor) return;
-      
+      if (!tiptapEditor) return;
+
       const url = prompt('Enter YouTube URL');
       if (url) {
         // Use the Youtube extension to embed a YouTube video
-        editor.chain().focus().setYoutubeVideo({ src: url }).run();
+        tiptapEditor.chain().focus().setYoutubeVideo({ src: url }).run();
       }
-    }, [editor]);
+    }, [tiptapEditor]);
 
     // Define setLink callback before the conditional return
     const setLink = useCallback(() => {
-      if (!editor) return;
-      
-      const previousUrl = editor.getAttributes('link').href;
+      if (!tiptapEditor) return;
+
+      const previousUrl = tiptapEditor.getAttributes('link').href;
       const url = window.prompt('URL', previousUrl);
       
       // cancelled
@@ -123,13 +121,13 @@ const RichTextEditor = forwardRef<any, RichTextEditorProps>(
       
       // empty
       if (url === '') {
-        editor.chain().focus().extendMarkRange('link').unsetLink().run();
+        tiptapEditor.chain().focus().extendMarkRange('link').unsetLink().run();
         return;
       }
-      
+
       // update link
-      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-    }, [editor]);
+      tiptapEditor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }, [tiptapEditor]);
     
     // Memoize extensions to prevent re-creation
     const extensions = useMemo(() => [
@@ -199,14 +197,7 @@ const RichTextEditor = forwardRef<any, RichTextEditorProps>(
       immediatelyRender: false,
     }, [defaultValue, onChange, autoFocus, readOnly, extensions]);
 
-    // Update editor state when the tiptapEditor changes
-    useEffect(() => {
-      if (tiptapEditor) {
-        setEditor(tiptapEditor);
-      }
-    }, [tiptapEditor]);
-    
-    useImperativeHandle(ref, () => tiptapEditor);
+    useImperativeHandle(ref, () => tiptapEditor, [tiptapEditor]);
 
     if (!tiptapEditor) {
       return <div>Loading editor...</div>;

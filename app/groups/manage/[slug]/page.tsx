@@ -6,11 +6,16 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getOrganizerConsoleData } from '@/lib/groups/organizer-console';
 import {
+  createCouponAction,
   createSponsorAction,
   createTierAction,
   deleteTierAction,
+  deactivateCouponAction,
+  requestManualPayoutAction,
   updateSponsorStatusAction,
-  updateTierAction
+  updateTierAction,
+  updatePayoutScheduleAction,
+  togglePayoutHoldAction
 } from './actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,8 +70,13 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
   const createTier = createTierAction.bind(null, params.slug);
   const updateTier = updateTierAction.bind(null, params.slug);
   const deleteTier = deleteTierAction.bind(null, params.slug);
+  const createCoupon = createCouponAction.bind(null, params.slug);
+  const deactivateCoupon = deactivateCouponAction.bind(null, params.slug);
   const createSponsor = createSponsorAction.bind(null, params.slug);
   const updateSponsorStatus = updateSponsorStatusAction.bind(null, params.slug);
+  const updatePayoutSchedule = updatePayoutScheduleAction.bind(null, params.slug);
+  const togglePayoutHold = togglePayoutHoldAction.bind(null, params.slug);
+  const requestManualPayout = requestManualPayoutAction.bind(null, params.slug);
 
   return (
     <div className="space-y-10">
@@ -111,6 +121,284 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
               <CardDescription>Projected MRR</CardDescription>
               <CardTitle>{formatCurrency(consoleData.membership.monthlyRecurringRevenue, primaryCurrency)}</CardTitle>
             </CardHeader>
+          </Card>
+        </div>
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Revenue & payouts</h2>
+            <p className="text-sm text-muted-foreground">
+              Monitor earnings, track coupons, and control payouts from a single command center.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {consoleData.revenue.summary.length === 0 ? (
+            <Card className="md:col-span-2 xl:col-span-4">
+              <CardHeader>
+                <CardTitle>No revenue captured yet</CardTitle>
+                <CardDescription>
+                  Launch paid tiers or events to start generating earnings insights in real time.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : (
+            consoleData.revenue.summary.map((summary) => (
+              <Card key={summary.currency}>
+                <CardHeader>
+                  <CardDescription className="uppercase tracking-wide text-xs">
+                    {summary.currency} net earnings
+                  </CardDescription>
+                  <CardTitle>{formatCurrency(summary.netCents, summary.currency)}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Gross</span>
+                    <span>{formatCurrency(summary.grossCents, summary.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Fees</span>
+                    <span>-{formatCurrency(summary.feeCents, summary.currency)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Transactions</span>
+                    <span>{summary.transactionCount}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Payout schedule</CardTitle>
+              <CardDescription>
+                Configure automated transfers and destination account preferences.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                Current status:{' '}
+                <span className="font-medium text-foreground">
+                  {consoleData.payoutSchedule?.status === 'paused' || consoleData.payoutSchedule?.manualHold
+                    ? 'Paused'
+                    : 'Active'}
+                </span>
+                {consoleData.payoutSchedule?.nextPayoutScheduledAt && (
+                  <span className="block">
+                    Next transfer:{' '}
+                    {consoleData.payoutSchedule.nextPayoutScheduledAt.toLocaleString()}
+                  </span>
+                )}
+              </div>
+              <form action={updatePayoutSchedule} className="space-y-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="frequency">Frequency</Label>
+                  <select
+                    id="frequency"
+                    name="frequency"
+                    defaultValue={consoleData.payoutSchedule?.frequency ?? 'weekly'}
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="destinationAccount">Destination account</Label>
+                  <Input
+                    id="destinationAccount"
+                    name="destinationAccount"
+                    placeholder="acct_1234"
+                    defaultValue={consoleData.payoutSchedule?.destinationAccount ?? ''}
+                  />
+                </div>
+                <Button type="submit" className="w-full">
+                  Save payout preferences
+                </Button>
+              </form>
+              <form action={togglePayoutHold} className="flex flex-col gap-3">
+                <input
+                  type="hidden"
+                  name="hold"
+                  value={consoleData.payoutSchedule?.manualHold ? 'false' : 'true'}
+                />
+                <Button variant="outline" type="submit" className="w-full">
+                  {consoleData.payoutSchedule?.manualHold ? 'Resume automatic payouts' : 'Pause automatic payouts'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Manual payout request</CardTitle>
+              <CardDescription>
+                Trigger an ad-hoc transfer for reconciliation or special cases.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form action={requestManualPayout} className="space-y-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="amount">Amount ({primaryCurrency})</Label>
+                  <Input id="amount" name="amount" placeholder="250" type="number" min="1" step="1" />
+                </div>
+                <input type="hidden" name="currency" value={primaryCurrency} />
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="note">Note</Label>
+                  <Textarea id="note" name="note" placeholder="Context for finance ops" />
+                </div>
+                <Button type="submit" className="w-full">
+                  Submit payout request
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="order-2 lg:order-1">
+            <CardHeader>
+              <CardTitle>Recent transactions</CardTitle>
+              <CardDescription>
+                Snapshot of the latest membership charges, refunds, and adjustments.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              {consoleData.revenue.recentEntries.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No transactions recorded yet.</p>
+              ) : (
+                <table className="w-full min-w-[480px] text-left text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-4 py-2">When</th>
+                      <th className="px-4 py-2">Type</th>
+                      <th className="px-4 py-2">Gross</th>
+                      <th className="px-4 py-2">Net</th>
+                      <th className="px-4 py-2">Fees</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consoleData.revenue.recentEntries.map((entry) => (
+                      <tr key={entry.id} className="border-t">
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          {entry.occurredAt.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-2 capitalize">{entry.type.replace('membership_', '').replace('_', ' ')}</td>
+                        <td className="px-4 py-2">{formatCurrency(entry.amountGrossCents, entry.currency)}</td>
+                        <td className="px-4 py-2">{formatCurrency(entry.amountNetCents, entry.currency)}</td>
+                        <td className="px-4 py-2">{formatCurrency(entry.feeCents, entry.currency)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="order-1 lg:order-2">
+            <CardHeader>
+              <CardTitle>Coupon catalog</CardTitle>
+              <CardDescription>
+                Track redemptions and launch limited-time incentives.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                {consoleData.coupons.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No coupons yet. Create your first offer below.</p>
+                ) : (
+                  <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {consoleData.coupons.map((coupon) => (
+                      <div
+                        key={coupon.id}
+                        className="flex items-start justify-between gap-4 rounded-lg border px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <div className="font-medium">{coupon.code}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {coupon.discountType === 'percentage'
+                              ? `${coupon.percentageOff}% off`
+                              : `${formatCurrency(coupon.amountOffCents ?? 0, coupon.currency ?? primaryCurrency)} off`}
+                            {coupon.maxRedemptions ? ` · ${coupon.redemptionCount}/${coupon.maxRedemptions} used` : ''}
+                          </div>
+                          {!coupon.isActive && <div className="text-xs text-destructive">Inactive</div>}
+                        </div>
+                        {coupon.isActive && (
+                          <form action={deactivateCoupon}>
+                            <input type="hidden" name="couponId" value={coupon.id} />
+                            <Button variant="ghost" size="sm" className="text-destructive" type="submit">
+                              Disable
+                            </Button>
+                          </form>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Separator />
+              <form action={createCoupon} className="grid gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="coupon-code">Code</Label>
+                  <Input id="coupon-code" name="code" placeholder="WELCOME50" required />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="discountType">Discount type</Label>
+                  <select
+                    id="discountType"
+                    name="discountType"
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    defaultValue="percentage"
+                  >
+                    <option value="percentage">Percentage</option>
+                    <option value="fixed_amount">Fixed amount</option>
+                  </select>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="percentageOff">% off</Label>
+                    <Input id="percentageOff" name="percentageOff" placeholder="25" type="number" min="1" max="100" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="amountOffCents">Amount off ({primaryCurrency})</Label>
+                    <Input id="amountOffCents" name="amountOffCents" placeholder="10" type="number" min="1" />
+                  </div>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="maxRedemptions">Max redemptions</Label>
+                    <Input id="maxRedemptions" name="maxRedemptions" placeholder="50" type="number" min="1" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="currency">Currency</Label>
+                    <Input id="currency" name="currency" defaultValue={primaryCurrency} maxLength={3} />
+                  </div>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="startsAt">Starts at</Label>
+                    <Input id="startsAt" name="startsAt" type="date" />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="endsAt">Ends at</Label>
+                    <Input id="endsAt" name="endsAt" type="date" />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea id="description" name="description" placeholder="Launch promotion details" />
+                </div>
+                <Button type="submit">Create coupon</Button>
+              </form>
+            </CardContent>
           </Card>
         </div>
       </section>

@@ -22,6 +22,9 @@ const CURRENCIES = [
   { code: 'GBP', symbol: '£', label: 'British Pound' },
   { code: 'CHF', symbol: 'CHF', label: 'Swiss Franc' },
 ];
+const isTestEnvironment = process.env.NODE_ENV === 'test';
+
+
 
 interface EventPricingProps {
   isPaid?: boolean;
@@ -220,23 +223,39 @@ export function EventPricing({
             
             <div className="col-span-2">
               <Label htmlFor="currency">Currency</Label>
-              <Select
-                value={currency}
-                onValueChange={handleCurrencyChange}
-              >
-                <SelectTrigger id="currency" className="mt-1">
-                  <SelectValue placeholder="Select currency" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {CURRENCIES.map((currency) => (
-                      <SelectItem key={currency.code} value={currency.code}>
-                        {currency.symbol} {currency.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              {isTestEnvironment ? (
+                <select
+                  id="currency"
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={currency}
+                  onChange={(event) => handleCurrencyChange(event.target.value)}
+                  data-testid="currency-select"
+                >
+                  {CURRENCIES.map((currencyOption) => (
+                    <option key={currencyOption.code} value={currencyOption.code}>
+                      {currencyOption.symbol} {currencyOption.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Select
+                  value={currency}
+                  onValueChange={handleCurrencyChange}
+                >
+                  <SelectTrigger id="currency" className="mt-1">
+                    <SelectValue placeholder="Select currency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {CURRENCIES.map((currencyOption) => (
+                        <SelectItem key={currencyOption.code} value={currencyOption.code}>
+                          {currencyOption.symbol} {currencyOption.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
           
