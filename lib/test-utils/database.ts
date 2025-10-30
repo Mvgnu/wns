@@ -89,6 +89,7 @@ export class TestDatabase {
       isDefault: boolean
       stripeProductId: string | null
       stripePriceId: string | null
+      memberLimit: number | null
     }> = {},
   ) {
     const tier = await prisma.groupMembershipTier.create({
@@ -103,6 +104,7 @@ export class TestDatabase {
         isDefault: overrides.isDefault ?? false,
         stripeProductId: overrides.stripeProductId ?? null,
         stripePriceId: overrides.stripePriceId ?? null,
+        memberLimit: overrides.memberLimit ?? null,
       },
     })
 

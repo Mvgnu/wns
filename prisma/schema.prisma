@@ -1171,6 +1171,7 @@ model GroupMembershipTier {
   description     String?
   benefits        String[]
   priceCents      Int                     @default(0)
+  memberLimit     Int?
   currency        String                  @default("EUR")
   billingPeriod   MembershipBillingPeriod @default(month)
   isDefault       Boolean                 @default(false)
@@ -1268,6 +1269,13 @@ enum PaymentDisputeStatus {
   lost
 }
 
+enum PaymentDisputeActionType {
+  note
+  evidence_submitted
+  escalated
+  written_off
+}
+
 model GroupPaymentRefund {
   id                    String               @id @default(cuid())
   groupId               String
@@ -1320,6 +1328,7 @@ model GroupPaymentDispute {
   group      Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
   membership GroupMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
   user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actions    GroupPaymentDisputeAction[]
 
   @@unique([stripeDisputeId])
   @@index([groupId])
@@ -1327,6 +1336,25 @@ model GroupPaymentDispute {
   @@index([stripeChargeId])
   @@index([status])
   @@index([stripeEventId])
+}
+
+model GroupPaymentDisputeAction {
+  id         String                     @id @default(cuid())
+  disputeId  String
+  groupId    String
+  actorId    String
+  actionType PaymentDisputeActionType
+  note       String?
+  createdAt  DateTime                   @default(now())
+
+  dispute GroupPaymentDispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  group   Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actor   User                @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId])
+  @@index([groupId])
+  @@index([actorId])
+  @@index([createdAt])
 }
 
 model GroupPayoutSchedule {
@@ -1360,6 +1388,7 @@ model GroupPayout {
   failureReason    String?
   stripePayoutId   String?
   stripeTransferId String?
+  stripeLastEventId String?
   metadata         Json?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
@@ -1372,6 +1401,7 @@ model GroupPayout {
   @@index([initiatedAt])
   @@index([scheduleId])
   @@unique([stripePayoutId])
+  @@index([stripeLastEventId])
 }
 
 enum MembershipDiscountType {

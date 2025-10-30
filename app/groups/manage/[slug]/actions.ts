@@ -6,6 +6,7 @@ import { getServerSession } from 'next-auth';
 import type {
   MembershipBillingPeriod,
   MembershipDiscountType,
+  PaymentDisputeActionType,
   PayoutFrequency,
   SponsorSlotStatus
 } from '@prisma/client';
@@ -21,6 +22,7 @@ import {
   deleteMembershipTier,
   formatBenefitsInput,
   requestManualPayout,
+  recordDisputeAction,
   toPriceCents,
   type CouponInput,
   toggleGroupPayoutHold,
@@ -82,6 +84,7 @@ export async function createTierAction(slug: string, formData: FormData): Promis
     const currency = String(formData.get('currency') ?? 'EUR').toUpperCase();
     const isDefault = formData.get('isDefault') === 'on';
     const priceCents = toPriceCents(String(formData.get('price') ?? '0'));
+    const memberLimit = parseOptionalInteger(formData.get('memberLimit'));
 
     await createMembershipTier(groupId, userId, {
       name,
@@ -90,7 +93,8 @@ export async function createTierAction(slug: string, formData: FormData): Promis
       billingPeriod,
       currency,
       priceCents,
-      isDefault
+      isDefault,
+      memberLimit
     });
 
     revalidatePath(`/groups/manage/${slug}`);
@@ -126,6 +130,10 @@ export async function updateTierAction(slug: string, formData: FormData): Promis
 
     if (formData.has('billingPeriod')) {
       updates.billingPeriod = formData.get('billingPeriod') as MembershipBillingPeriod;
+    }
+
+    if (formData.has('memberLimit')) {
+      updates.memberLimit = parseOptionalInteger(formData.get('memberLimit'));
     }
 
     await updateMembershipTier(tierId, userId, updates);
@@ -252,6 +260,41 @@ export async function requestManualPayoutAction(slug: string, formData: FormData
     return { success: true };
   } catch (error) {
     console.error('Failed to request payout', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+const disputeActionTypes: PaymentDisputeActionType[] = [
+  'note',
+  'evidence_submitted',
+  'escalated',
+  'written_off'
+];
+
+export async function recordDisputeActionAction(slug: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const disputeId = String(formData.get('disputeId') ?? '').trim();
+    if (!disputeId) {
+      return { success: false, error: 'Dispute ID missing' };
+    }
+
+    const actionRaw = String(formData.get('actionType') ?? '').trim();
+    if (!disputeActionTypes.includes(actionRaw as PaymentDisputeActionType)) {
+      return { success: false, error: 'Invalid action type' };
+    }
+
+    const note = String(formData.get('note') ?? '');
+    const { userId } = await resolveOrganizerContext(slug);
+
+    await recordDisputeAction(disputeId, userId, {
+      actionType: actionRaw as PaymentDisputeActionType,
+      note
+    });
+
+    revalidatePath(`/groups/manage/${slug}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to record dispute action', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

@@ -3,12 +3,16 @@ import { cache } from 'react';
 import type {
   GroupMembership,
   GroupMembershipCoupon,
+  GroupPaymentDispute,
+  GroupPaymentDisputeAction,
   GroupMembershipTier,
   GroupPayout,
   GroupPayoutSchedule,
   MembershipBillingPeriod,
   MembershipDiscountType,
   MembershipStatus,
+  PaymentDisputeActionType,
+  PaymentDisputeStatus,
   PayoutFrequency,
   PayoutScheduleStatus,
   PayoutStatus,
@@ -53,6 +57,9 @@ type OrganizerConsoleData = {
     billingPeriod: MembershipBillingPeriod;
     isDefault: boolean;
     memberCount: number;
+    memberLimit: number | null;
+    availableSlots: number | null;
+    atCapacity: boolean;
   }>;
   coupons: Array<{
     id: string;
@@ -105,6 +112,23 @@ type OrganizerConsoleData = {
     lastPayoutAt?: Date | null;
     nextPayoutScheduledAt?: Date | null;
   };
+  disputes: Array<{
+    id: string;
+    stripeDisputeId: string;
+    amountCents: number;
+    currency: string;
+    status: PaymentDisputeStatus;
+    reason?: string | null;
+    evidenceDueAt?: Date | null;
+    closedAt?: Date | null;
+    createdAt: Date;
+    latestAction?: {
+      actionType: PaymentDisputeActionType;
+      note?: string | null;
+      actorName?: string | null;
+      createdAt: Date;
+    } | null;
+  }>;
   sponsors: Array<{
     id: string;
     name: string;
@@ -121,6 +145,81 @@ type OrganizerConsoleData = {
     maxAttendees?: number | null;
   }>;
 };
+
+type DisputeWithActionActor = GroupPaymentDispute & {
+  actions: Array<
+    GroupPaymentDisputeAction & {
+      actor: { name: string | null } | null;
+    }
+  >;
+};
+
+type DisputeActionWithActor = GroupPaymentDisputeAction & {
+  actor: { name: string | null } | null;
+};
+
+export type DisputeActionInput = {
+  actionType: PaymentDisputeActionType;
+  note?: string | null;
+};
+
+export async function recordDisputeAction(
+  disputeId: string,
+  userId: string,
+  input: DisputeActionInput
+): Promise<DisputeActionWithActor> {
+  const dispute = await prisma.groupPaymentDispute.findUnique({
+    where: { id: disputeId },
+    select: {
+      id: true,
+      groupId: true,
+      metadata: true
+    }
+  });
+
+  if (!dispute) {
+    throw new Error('DISPUTE_NOT_FOUND');
+  }
+
+  await assertOrganizerAccess(dispute.groupId, userId);
+
+  const normalizedNote = input.note ? input.note.trim() : '';
+  const requiresNote = input.actionType !== 'evidence_submitted';
+
+  if (requiresNote && normalizedNote.length === 0) {
+    throw new Error('NOTE_REQUIRED');
+  }
+
+  const action = await prisma.groupPaymentDisputeAction.create({
+    data: {
+      disputeId: dispute.id,
+      groupId: dispute.groupId,
+      actorId: userId,
+      actionType: input.actionType,
+      note: normalizedNote.length > 0 ? normalizedNote : undefined
+    },
+    include: {
+      actor: { select: { name: true } }
+    }
+  });
+
+  const metadata = (dispute.metadata as Record<string, unknown> | null) ?? {};
+
+  await prisma.groupPaymentDispute.update({
+    where: { id: dispute.id },
+    data: {
+      metadata: {
+        ...metadata,
+        lastOrganizerActionAt: action.createdAt.toISOString(),
+        lastOrganizerActionType: input.actionType,
+        lastOrganizerActionActorId: userId,
+        lastOrganizerActionNote: action.note ?? null
+      }
+    }
+  });
+
+  return action;
+}
 
 type OrganizerAuthorization = {
   groupId: string;
@@ -154,6 +253,24 @@ async function assertOrganizerAccess(groupId: string, userId: string) {
   if (!isOrganizer) {
     throw new Error('UNAUTHORIZED');
   }
+}
+
+function normalizeMemberLimitInput(limit: number | null | undefined): number | null {
+  if (limit == null) {
+    return null;
+  }
+
+  if (!Number.isFinite(limit)) {
+    throw new Error('INVALID_MEMBER_LIMIT');
+  }
+
+  const coerced = Math.trunc(limit);
+
+  if (coerced < 0) {
+    throw new Error('INVALID_MEMBER_LIMIT');
+  }
+
+  return coerced;
 }
 
 export const getOrganizerConsoleData = cache(async (slug: string, userId: string): Promise<OrganizerConsoleData> => {
@@ -200,17 +317,19 @@ export const getOrganizerConsoleData = cache(async (slug: string, userId: string
   const totalMemberships = group.memberships.length;
   const activeMemberships = group.memberships.filter((membership) => membership.status === 'active').length;
   const churnedMemberships = group.memberships.filter((membership) => membership.status === 'canceled').length;
-  const payingMemberships = group.memberships.filter((membership) => Boolean(membership.tierId)).length;
+  const payingMemberships = group.memberships.filter(
+    (membership) => Boolean(membership.tierId) && membership.status !== 'canceled'
+  ).length;
 
   const tierMemberCounts = new Map<string, number>();
   group.memberships.forEach((membership) => {
-    if (membership.tierId) {
+    if (membership.tierId && membership.status !== 'canceled') {
       tierMemberCounts.set(membership.tierId, (tierMemberCounts.get(membership.tierId) ?? 0) + 1);
     }
   });
 
   const monthlyRecurringRevenue = group.memberships.reduce((acc, membership) => {
-    if (!membership.tier) return acc;
+    if (!membership.tier || membership.status === 'canceled') return acc;
     if (membership.tier.billingPeriod === 'month') {
       return acc + membership.tier.priceCents;
     }
@@ -222,7 +341,7 @@ export const getOrganizerConsoleData = cache(async (slug: string, userId: string
     return acc;
   }, 0);
 
-  const [couponRows, revenueSummary, recentRevenueEntries, payoutSchedule, payoutRows] = await Promise.all([
+  const [couponRows, revenueSummary, recentRevenueEntries, payoutSchedule, payoutRows, disputeRows] = await Promise.all([
     prisma.groupMembershipCoupon.findMany({
       where: { groupId: group.id },
       orderBy: { createdAt: 'desc' }
@@ -234,6 +353,20 @@ export const getOrganizerConsoleData = cache(async (slug: string, userId: string
       where: { groupId: group.id },
       orderBy: { initiatedAt: 'desc' },
       take: 15
+    }),
+    prisma.groupPaymentDispute.findMany({
+      where: { groupId: group.id },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: {
+        actions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: {
+            actor: { select: { name: true } }
+          }
+        }
+      }
     })
   ]);
 
@@ -252,17 +385,26 @@ export const getOrganizerConsoleData = cache(async (slug: string, userId: string
       churned: churnedMemberships,
       monthlyRecurringRevenue
     },
-    tiers: group.membershipTiers.map((tier) => ({
-      id: tier.id,
-      name: tier.name,
-      description: tier.description,
-      benefits: tier.benefits,
-      priceCents: tier.priceCents,
-      currency: tier.currency,
-      billingPeriod: tier.billingPeriod,
-      isDefault: tier.isDefault,
-      memberCount: tierMemberCounts.get(tier.id) ?? 0
-    })),
+    tiers: group.membershipTiers.map((tier) => {
+      const memberCount = tierMemberCounts.get(tier.id) ?? 0;
+      const memberLimit = typeof tier.memberLimit === 'number' ? tier.memberLimit : null;
+      const availableSlots = memberLimit !== null ? Math.max(memberLimit - memberCount, 0) : null;
+
+      return {
+        id: tier.id,
+        name: tier.name,
+        description: tier.description,
+        benefits: tier.benefits,
+        priceCents: tier.priceCents,
+        currency: tier.currency,
+        billingPeriod: tier.billingPeriod,
+        isDefault: tier.isDefault,
+        memberCount,
+        memberLimit,
+        availableSlots,
+        atCapacity: memberLimit !== null ? memberCount >= memberLimit : false
+      };
+    }),
     coupons: couponRows.map((coupon) => ({
       id: coupon.id,
       code: coupon.code,
@@ -310,6 +452,29 @@ export const getOrganizerConsoleData = cache(async (slug: string, userId: string
           nextPayoutScheduledAt: payoutSchedule.nextPayoutScheduledAt
         }
       : undefined,
+    disputes: (disputeRows as DisputeWithActionActor[]).map((dispute) => {
+      const latestAction = dispute.actions[0] ?? null;
+
+      return {
+        id: dispute.id,
+        stripeDisputeId: dispute.stripeDisputeId,
+        amountCents: dispute.amountCents,
+        currency: dispute.currency,
+        status: dispute.status,
+        reason: dispute.reason,
+        evidenceDueAt: dispute.evidenceDueAt,
+        closedAt: dispute.closedAt,
+        createdAt: dispute.createdAt,
+        latestAction: latestAction
+          ? {
+              actionType: latestAction.actionType,
+              note: latestAction.note ?? null,
+              actorName: latestAction.actor?.name ?? null,
+              createdAt: latestAction.createdAt
+            }
+          : null
+      };
+    }),
     sponsors: group.sponsorSlots.map((slot) => ({
       id: slot.id,
       name: slot.name,
@@ -330,10 +495,13 @@ export type TierInput = {
   currency: string;
   billingPeriod: MembershipBillingPeriod;
   isDefault: boolean;
+  memberLimit?: number | null;
 };
 
 export async function createMembershipTier(groupId: string, userId: string, input: TierInput) {
   await assertOrganizerAccess(groupId, userId);
+
+  const memberLimit = normalizeMemberLimitInput(input.memberLimit ?? null);
 
   const tier = await prisma.$transaction(async (tx) => {
     const created = await tx.groupMembershipTier.create({
@@ -345,7 +513,8 @@ export async function createMembershipTier(groupId: string, userId: string, inpu
         priceCents: input.priceCents,
         currency: input.currency,
         billingPeriod: input.billingPeriod,
-        isDefault: input.isDefault
+        isDefault: input.isDefault,
+        memberLimit
       }
     });
 
@@ -402,10 +571,16 @@ export async function updateMembershipTier(
 
   await assertOrganizerAccess(tier.groupId, userId);
 
+  const normalizedUpdates: Partial<TierInput> & { memberLimit?: number | null } = { ...updates };
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'memberLimit')) {
+    normalizedUpdates.memberLimit = normalizeMemberLimitInput(updates.memberLimit ?? null);
+  }
+
   const updatedTier = await prisma.$transaction(async (tx) => {
     const nextTier = await tx.groupMembershipTier.update({
       where: { id: tierId },
-      data: updates
+      data: normalizedUpdates
     });
 
     if (updates.isDefault) {

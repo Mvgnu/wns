@@ -17,19 +17,19 @@
    - Ship live checkout for paid events and tiered memberships.
    - Owner: Commerce Squad
    - Target: 2025-11-15
-  - Status: In progress — membership checkout API live with idempotent session creation, webhook-driven membership syncing, revenue ledger feeds powering organizer earnings summaries, and Stripe-backed coupon validation in checkout.
+  - Status: In progress — membership checkout API live with idempotent session creation, webhook-driven membership syncing, revenue ledger feeds powering organizer earnings summaries, Stripe-backed coupon validation in checkout, automated receipt emails confirming successful charges, tier capacity gating that blocks oversubscription while preserving renewals for existing members, and automatic subscription transitions that cancel superseded plans after upgrades or downgrades.
 2. **Organizer Revenue Console**
    - Build pricing catalogs, coupon management, and payout scheduling.
    - Surface earnings dashboards with export support.
    - Owner: Commerce Squad
    - Target: 2025-11-29
-   - Status: In progress — revenue dashboard cards, coupon catalog, and payout scheduling controls now live in the organizer console with manual payout requests.
+   - Status: In progress — revenue dashboard cards, coupon catalog, payout scheduling controls, and Stripe payout reconciliation now live in the organizer console with manual payout requests.
 3. **Dispute & Refund Automation**
    - Implement refund / chargeback workflows with audit logs.
    - Integrate dispute notifications into organizer console.
    - Owner: Risk & Finance Ops
    - Target: 2025-12-10
-   - Status: In progress — Stripe refund events now populate audit ledgers and chargeback disputes update organizer revenue entries.
+  - Status: In progress — Stripe refund events now populate audit ledgers, organizer consoles surface dispute queues with action logging, and payout webhook idempotency keeps settlement states in sync.
 
 ## Key Dependencies
 - Stable Vitest harness for API and component suites (TH-002).

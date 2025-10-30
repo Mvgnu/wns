@@ -110,6 +110,69 @@ describeIfDatabase('Stripe webhook API', () => {
     expect(revenueEntry?.groupId).toBe(group.id)
   })
 
+  it('cancels the previous subscription when a member switches tiers', async () => {
+    const owner = await testDb.createTestUser()
+    const member = await testDb.createTestUser()
+    const group = await testDb.createTestGroup({ ownerId: owner.id })
+    const starterTier = await testDb.createTestMembershipTier(group.id, {
+      billingPeriod: 'month',
+    })
+    const proTier = await testDb.createTestMembershipTier(group.id, {
+      billingPeriod: 'month',
+    })
+
+    await prisma.groupMembership.create({
+      data: {
+        groupId: group.id,
+        userId: member.id,
+        tierId: starterTier.id,
+        status: 'active',
+        stripeSubscriptionId: 'sub_starter',
+        stripeCustomerId: 'cus_existing',
+      },
+    })
+
+    const cancelSubscription = vi.fn().mockResolvedValue({})
+
+    const constructEvent = vi.fn().mockReturnValue({
+      id: 'evt_upgrade',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_upgrade',
+          metadata: {
+            userId: member.id,
+            tierId: proTier.id,
+            groupId: group.id,
+          },
+          subscription: 'sub_pro',
+          customer: 'cus_existing',
+          payment_intent: 'pi_upgrade',
+          amount_total: 4500,
+          currency: 'eur',
+          created: Math.floor(Date.now() / 1000),
+          mode: 'subscription',
+        },
+      },
+    })
+
+    getStripeClient.mockReturnValue({
+      webhooks: { constructEvent },
+      subscriptions: { cancel: cancelSubscription },
+    } as any)
+
+    const response = await POST(createRequest('{}'))
+    expect(response.status).toBe(200)
+
+    const membership = await prisma.groupMembership.findUnique({
+      where: { groupId_userId: { groupId: group.id, userId: member.id } },
+    })
+
+    expect(membership?.tierId).toBe(proTier.id)
+    expect(membership?.stripeSubscriptionId).toBe('sub_pro')
+    expect(cancelSubscription).toHaveBeenCalledWith('sub_starter')
+  })
+
   it('records coupon usage on checkout completion', async () => {
     const user = await testDb.createTestUser()
     const group = await testDb.createTestGroup({ ownerId: user.id })
@@ -513,5 +576,129 @@ describeIfDatabase('Stripe webhook API', () => {
     expect(chargebackEntry).not.toBeNull()
     expect(chargebackEntry?.type).toBe('membership_chargeback')
     expect(chargebackEntry?.amountGrossCents).toBe(-2000)
+  })
+
+  it('updates group payouts when Stripe payout succeeds', async () => {
+    const organizer = await testDb.createTestUser()
+    const group = await testDb.createTestGroup({ ownerId: organizer.id })
+    const schedule = await prisma.groupPayoutSchedule.create({
+      data: {
+        groupId: group.id,
+        frequency: 'weekly',
+        status: 'active',
+        destinationAccount: 'acct_123',
+        manualHold: false,
+      },
+    })
+
+    const payout = await prisma.groupPayout.create({
+      data: {
+        groupId: group.id,
+        scheduleId: schedule.id,
+        amountCents: 0,
+        currency: 'EUR',
+        status: 'pending',
+        metadata: { note: 'Manual review' },
+      },
+    })
+
+    const arrival = Math.floor(Date.now() / 1000) + 3600
+
+    const constructEvent = vi.fn().mockReturnValue({
+      id: 'evt_payout_paid',
+      type: 'payout.paid',
+      data: {
+        object: {
+          id: 'po_123',
+          amount: 4200,
+          currency: 'eur',
+          status: 'paid',
+          created: arrival - 7200,
+          arrival_date: arrival,
+          balance_transaction: 'txn_payout',
+          metadata: {
+            groupId: group.id,
+            groupPayoutId: payout.id,
+            groupPayoutScheduleId: schedule.id,
+            transferId: 'tr_123',
+          },
+        },
+      },
+    })
+
+    getStripeClient.mockReturnValue({
+      webhooks: { constructEvent },
+    } as any)
+
+    const response = await POST(createRequest('{}'))
+    expect(response.status).toBe(200)
+
+    const refreshed = await prisma.groupPayout.findUnique({ where: { id: payout.id } })
+    expect(refreshed).not.toBeNull()
+    expect(refreshed?.status).toBe('paid')
+    expect(refreshed?.stripePayoutId).toBe('po_123')
+    expect(refreshed?.stripeTransferId).toBe('tr_123')
+    expect(refreshed?.amountCents).toBe(4200)
+    expect(refreshed?.currency).toBe('EUR')
+    expect(refreshed?.stripeLastEventId).toBe('evt_payout_paid')
+    expect(refreshed?.completedAt).not.toBeNull()
+
+    const updatedSchedule = await prisma.groupPayoutSchedule.findUnique({ where: { id: schedule.id } })
+    expect(updatedSchedule?.lastPayoutAt).not.toBeNull()
+    expect(updatedSchedule?.nextPayoutScheduledAt).toBeNull()
+
+    const metadata = refreshed?.metadata as Record<string, any> | null
+    expect(metadata?.note).toBe('Manual review')
+    expect(metadata?.stripe?.balanceTransaction).toBe('txn_payout')
+    expect(metadata?.stripe?.arrivalDate).toBeTruthy()
+  })
+
+  it('records payout failures with reason details', async () => {
+    const organizer = await testDb.createTestUser()
+    const group = await testDb.createTestGroup({ ownerId: organizer.id })
+
+    const payout = await prisma.groupPayout.create({
+      data: {
+        groupId: group.id,
+        amountCents: 2500,
+        currency: 'EUR',
+        status: 'pending',
+      },
+    })
+
+    const constructEvent = vi.fn().mockReturnValue({
+      id: 'evt_payout_failed',
+      type: 'payout.failed',
+      data: {
+        object: {
+          id: 'po_failed',
+          amount: 2500,
+          currency: 'eur',
+          status: 'failed',
+          created: Math.floor(Date.now() / 1000),
+          failure_message: 'Bank account closed',
+          failure_code: 'account_closed',
+          metadata: {
+            groupId: group.id,
+            groupPayoutId: payout.id,
+          },
+        },
+      },
+    })
+
+    getStripeClient.mockReturnValue({
+      webhooks: { constructEvent },
+    } as any)
+
+    const response = await POST(createRequest('{}'))
+    expect(response.status).toBe(200)
+
+    const refreshed = await prisma.groupPayout.findUnique({ where: { id: payout.id } })
+    expect(refreshed).not.toBeNull()
+    expect(refreshed?.status).toBe('failed')
+    expect(refreshed?.failureReason).toBe('Bank account closed')
+    expect(refreshed?.stripePayoutId).toBe('po_failed')
+    expect(refreshed?.stripeLastEventId).toBe('evt_payout_failed')
+    expect(refreshed?.completedAt).toBeNull()
   })
 })
