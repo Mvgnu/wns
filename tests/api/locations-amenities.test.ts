@@ -1,22 +1,26 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
+import { vi } from 'vitest'
 import { NextRequest } from 'next/server'
-import { POST as LOC_POST, GET as LOC_GET, PUT as LOC_PUT } from '@/app/api/locations/route'
+import * as NextAuth from 'next-auth'
+import { POST as LOC_POST, GET as LOC_GET } from '@/app/api/locations/route'
 import { GET as AMEN_GET, POST as AMEN_POST } from '@/app/api/places/[id]/amenities/route'
 import { DELETE as AMEN_DEL } from '@/app/api/places/[id]/amenities/[amenityId]/route'
 import { testDb } from '@/lib/test-utils/database'
 
-jest.mock('next-auth', () => ({ getServerSession: jest.fn() }))
-jest.mock('@/lib/auth', () => ({ authOptions: {} }))
-const { getServerSession } = require('next-auth')
+vi.mock('next-auth', () => ({ getServerSession: vi.fn() }))
+vi.mock('@/lib/auth', () => ({ authOptions: {} }))
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession)
 
-describe('Locations amenities & filters', () => {
-	beforeEach(() => { jest.clearAllMocks() })
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip
+
+describeIfDatabase('Locations amenities & filters', () => {
+        beforeEach(() => { vi.clearAllMocks() })
 
 	it('creates location with amenities and can filter by amenity and difficulty', async () => {
 		const user = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user.id } })
 
 		const body = {
 			name: 'Skatepark A',
@@ -43,7 +47,7 @@ describe('Locations amenities & filters', () => {
 
 	it('can add and delete amenities via places endpoints', async () => {
 		const user = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user.id } })
 
 		const body = {
 			name: 'Gym B',

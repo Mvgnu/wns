@@ -1,8 +1,9 @@
+import { vi } from 'vitest';
 import { render, screen } from '@testing-library/react'
 import EventCard from '@/components/events/EventCard'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-jest.mock('next-auth/react', () => ({
+vi.mock('next-auth/react', () => ({
 	useSession: () => ({ data: null, status: 'unauthenticated' }),
 }))
 

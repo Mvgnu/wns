@@ -1,23 +1,26 @@
 /**
  * API route tests for events
  */
+import { vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import * as NextAuth from 'next-auth';
 import { testDb } from '@/lib/test-utils/database';
 import { createMockSession } from '@/lib/test-utils';
 import { GET, POST } from '@/app/api/events/route';
 import { GET as getEventDetail, PUT, DELETE } from '@/app/api/events/[id]/route';
 import { getBaseUrl } from '../utils/test-utils';
 
-// Mock NextAuth
-jest.mock('next-auth', () => ({
-  getServerSession: jest.fn(),
+vi.mock('next-auth', () => ({
+  getServerSession: vi.fn(),
 }));
 
-const { getServerSession } = require('next-auth');
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession);
 
-describe('Events API', () => {
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip;
+
+describeIfDatabase('Events API', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('GET /api/events', () => {
@@ -25,7 +28,7 @@ describe('Events API', () => {
       const user = await testDb.createTestUser();
       const session = createMockSession(user);
 
-      getServerSession.mockResolvedValue(session);
+      getServerSessionMock.mockResolvedValue(session);
 
       const request = new NextRequest(`${getBaseUrl()}/api/events`);
       const response = await GET(request);
@@ -39,7 +42,7 @@ describe('Events API', () => {
       const user = await testDb.createTestUser();
       const session = createMockSession(user);
 
-      getServerSession.mockResolvedValue(session);
+      getServerSessionMock.mockResolvedValue(session);
 
       const request = new NextRequest(`${getBaseUrl()}/api/events?location=Berlin`);
       const response = await GET(request);
@@ -53,7 +56,7 @@ describe('Events API', () => {
       const user = await testDb.createTestUser();
       const session = createMockSession(user);
 
-      getServerSession.mockResolvedValue(session);
+      getServerSessionMock.mockResolvedValue(session);
 
       const request = new NextRequest(`${getBaseUrl()}/api/events?sport=running`);
       const response = await GET(request);
@@ -69,7 +72,7 @@ describe('Events API', () => {
       const user = await testDb.createTestUser();
       const session = createMockSession(user);
 
-      getServerSession.mockResolvedValue(session);
+      getServerSessionMock.mockResolvedValue(session);
 
       const eventData = {
         title: 'Test Event',
@@ -94,7 +97,7 @@ describe('Events API', () => {
     });
 
     it('should reject event creation for unauthenticated users', async () => {
-      getServerSession.mockResolvedValue(null);
+      getServerSessionMock.mockResolvedValue(null);
 
       const eventData = {
         title: 'Test Event',
@@ -123,7 +126,7 @@ describe('Events API', () => {
         isPrivate: false,
       });
 
-      getServerSession.mockResolvedValue(null); // Unauthenticated
+      getServerSessionMock.mockResolvedValue(null); // Unauthenticated
 
       const request = new NextRequest(`${getBaseUrl()}/api/events/${event.id}`);
       const response = await getEventDetail(request, {
@@ -144,7 +147,7 @@ describe('Events API', () => {
       });
 
       const session = createMockSession(organizer);
-      getServerSession.mockResolvedValue(session);
+      getServerSessionMock.mockResolvedValue(session);
 
       const request = new NextRequest(`${getBaseUrl()}/api/events/${event.id}`);
       const response = await getEventDetail(request, {

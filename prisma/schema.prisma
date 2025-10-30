@@ -88,6 +88,9 @@ model User {
 
   // Organizer monetization relationships
   groupMemberships GroupMembership[]
+  revenueEntries   GroupRevenueEntry[]
+  paymentRefunds   GroupPaymentRefund[]
+  paymentDisputes  GroupPaymentDispute[]
 
   // New relationship for co-organizing events
   coOrganizerEvents EventOrganizer[]
@@ -191,9 +194,16 @@ model Group {
   memberStatuses GroupMemberStatus[]
 
   // Monetization and sponsor relationships
-  membershipTiers GroupMembershipTier[]
-  memberships     GroupMembership[]
-  sponsorSlots    GroupSponsorSlot[]
+  membershipTiers   GroupMembershipTier[]
+  memberships       GroupMembership[]
+  membershipCoupons GroupMembershipCoupon[]
+  revenueEntries    GroupRevenueEntry[]
+  paymentRefunds    GroupPaymentRefund[]
+  paymentDisputes   GroupPaymentDispute[]
+  payoutSchedule    GroupPayoutSchedule?
+  payouts           GroupPayout[]
+  sponsorSlots      GroupSponsorSlot[]
+  dailyMetrics      GroupDailyMetric[]
 
   // Community conversation relationships
   conversations GroupConversation[]
@@ -1120,6 +1130,32 @@ enum MembershipStatus {
   canceled
 }
 
+enum RevenueEntryType {
+  membership_charge
+  membership_refund
+  membership_chargeback
+}
+
+enum PayoutFrequency {
+  daily
+  weekly
+  monthly
+  manual
+}
+
+enum PayoutScheduleStatus {
+  active
+  paused
+}
+
+enum PayoutStatus {
+  pending
+  in_transit
+  paid
+  failed
+  canceled
+}
+
 enum SponsorSlotStatus {
   draft
   scheduled
@@ -1160,16 +1196,213 @@ model GroupMembership {
   renewedAt DateTime?
   expiresAt DateTime?
   notes     String?
+  stripeCustomerId        String?
+  stripeSubscriptionId    String?
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
+  stripeLastEventId       String?
 
   group Group                @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   tier  GroupMembershipTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
+  revenueEntries GroupRevenueEntry[]
+  paymentRefunds GroupPaymentRefund[]
+  paymentDisputes GroupPaymentDispute[]
 
   @@unique([groupId, userId])
   @@index([groupId])
   @@index([userId])
   @@index([tierId])
   @@index([status])
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+  @@index([stripeCheckoutSessionId])
+}
+
+model GroupRevenueEntry {
+  id                       String            @id @default(cuid())
+  groupId                  String
+  membershipId             String?
+  userId                   String?
+  type                     RevenueEntryType
+  amountGrossCents         Int
+  amountNetCents           Int
+  feeCents                 Int                @default(0)
+  currency                 String             @default("EUR")
+  occurredAt               DateTime
+  stripeEventId            String
+  stripeObjectId           String?
+  stripeBalanceTransaction String?
+  metadata                 Json?
+  couponId                 String?
+  createdAt                DateTime           @default(now())
+
+  group       Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  membership  GroupMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  coupon      GroupMembershipCoupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+  @@index([membershipId])
+  @@index([userId])
+  @@index([occurredAt])
+  @@unique([stripeEventId])
+  @@index([couponId])
+}
+
+enum PaymentRefundStatus {
+  pending
+  succeeded
+  failed
+  canceled
+}
+
+enum PaymentDisputeStatus {
+  needs_response
+  under_review
+  warning_needs_response
+  warning_under_review
+  warning_closed
+  charge_refunded
+  won
+  lost
+}
+
+model GroupPaymentRefund {
+  id                    String               @id @default(cuid())
+  groupId               String
+  membershipId          String?
+  userId                String?
+  stripeRefundId        String
+  stripeChargeId        String
+  stripePaymentIntentId String?
+  stripeEventId         String
+  amountCents           Int
+  currency              String               @default("EUR")
+  reason                String?
+  status                PaymentRefundStatus  @default(pending)
+  failureReason         String?
+  refundedAt            DateTime?
+  metadata              Json?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  group      Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  membership GroupMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([stripeRefundId])
+  @@index([groupId])
+  @@index([membershipId])
+  @@index([stripeChargeId])
+  @@index([stripeEventId])
+}
+
+model GroupPaymentDispute {
+  id                    String                @id @default(cuid())
+  groupId               String
+  membershipId          String?
+  userId                String?
+  stripeDisputeId       String
+  stripeChargeId        String
+  stripePaymentIntentId String?
+  stripeEventId         String
+  amountCents           Int
+  currency              String                @default("EUR")
+  reason                String?
+  status                PaymentDisputeStatus @default(needs_response)
+  evidenceDueAt         DateTime?
+  closedAt              DateTime?
+  metadata              Json?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  group      Group           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  membership GroupMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([stripeDisputeId])
+  @@index([groupId])
+  @@index([membershipId])
+  @@index([stripeChargeId])
+  @@index([status])
+  @@index([stripeEventId])
+}
+
+model GroupPayoutSchedule {
+  id                    String               @id @default(cuid())
+  groupId               String               @unique
+  frequency             PayoutFrequency      @default(weekly)
+  status                PayoutScheduleStatus @default(active)
+  destinationAccount    String?
+  manualHold            Boolean              @default(false)
+  lastPayoutAt          DateTime?
+  nextPayoutScheduledAt DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  group   Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  payouts GroupPayout[]
+
+  @@index([status])
+  @@index([nextPayoutScheduledAt])
+}
+
+model GroupPayout {
+  id               String       @id @default(cuid())
+  groupId          String
+  scheduleId       String?
+  amountCents      Int
+  currency         String       @default("EUR")
+  status           PayoutStatus @default(pending)
+  initiatedAt      DateTime     @default(now())
+  completedAt      DateTime?
+  failureReason    String?
+  stripePayoutId   String?
+  stripeTransferId String?
+  metadata         Json?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  group    Group               @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  schedule GroupPayoutSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+  @@index([status])
+  @@index([initiatedAt])
+  @@index([scheduleId])
+  @@unique([stripePayoutId])
+}
+
+enum MembershipDiscountType {
+  percentage
+  fixed_amount
+}
+
+model GroupMembershipCoupon {
+  id                     String                   @id @default(cuid())
+  groupId                String
+  code                   String
+  description            String?
+  discountType           MembershipDiscountType   @default(percentage)
+  percentageOff          Int?
+  amountOffCents         Int?
+  currency               String?
+  maxRedemptions         Int?
+  redemptionCount        Int                      @default(0)
+  startsAt               DateTime?
+  endsAt                 DateTime?
+  isActive               Boolean                  @default(true)
+  stripeCouponId         String?
+  stripePromotionCodeId  String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+
+  group          Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  revenueEntries GroupRevenueEntry[]
+
+  @@unique([groupId, code])
+  @@index([groupId])
 }
 
 model GroupSponsorSlot {

@@ -1,28 +1,29 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
-import { NextRequest } from 'next/server'
+import { vi } from 'vitest'
+import * as NextAuth from 'next-auth'
 import { testDb } from '../utils/database'
 import { createMockSession, createMockRequest } from '../utils'
 import { GET, PUT, DELETE } from '@/app/api/groups/[id]/route'
 import { POST } from '@/app/api/groups/route'
-import { getBaseUrl } from '../utils/test-utils'
 
-// Mock NextAuth
-jest.mock('next-auth', () => ({
-  getServerSession: jest.fn(),
+vi.mock('next-auth', () => ({
+  getServerSession: vi.fn(),
 }))
 
 // Mock authOptions to avoid ESM issues from @auth/prisma-adapter
-jest.mock('@/lib/auth', () => ({
+vi.mock('@/lib/auth', () => ({
   authOptions: {},
 }))
 
-const { getServerSession } = require('next-auth')
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession)
 
-describe('Groups API', () => {
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip
+
+describeIfDatabase('Groups API', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   describe('GET /api/groups/[id]', () => {
@@ -50,7 +51,7 @@ describe('Groups API', () => {
         isPrivate: true,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(owner))
+      getServerSessionMock.mockResolvedValue(createMockSession(owner))
 
       const request = createMockRequest(`/api/groups/${group.id}`)
       const response = await GET(request, { params: Promise.resolve({ id: group.id }) })
@@ -69,7 +70,7 @@ describe('Groups API', () => {
         isPrivate: true,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(nonMember))
+      getServerSessionMock.mockResolvedValue(createMockSession(nonMember))
 
       const request = createMockRequest(`/api/groups/${group.id}`)
       const response = await GET(request, { params: Promise.resolve({ id: group.id }) })
@@ -88,7 +89,7 @@ describe('Groups API', () => {
   describe('POST /api/groups', () => {
     it('should create a new group for authenticated user', async () => {
       const user = await testDb.createTestUser()
-      getServerSession.mockResolvedValue(createMockSession(user))
+      getServerSessionMock.mockResolvedValue(createMockSession(user))
 
       const groupData = {
         name: 'Test Group',
@@ -114,7 +115,7 @@ describe('Groups API', () => {
     })
 
     it('should return 401 for unauthenticated users', async () => {
-      getServerSession.mockResolvedValue(null)
+      getServerSessionMock.mockResolvedValue(null)
 
       const groupData = {
         name: 'Test Group',
@@ -142,7 +143,7 @@ describe('Groups API', () => {
         isPrivate: false,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(owner))
+      getServerSessionMock.mockResolvedValue(createMockSession(owner))
 
       const updateData = {
         name: 'Updated Group Name',
@@ -170,7 +171,7 @@ describe('Groups API', () => {
         ownerId: owner.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(nonOwner))
+      getServerSessionMock.mockResolvedValue(createMockSession(nonOwner))
 
       const updateData = { name: 'Updated Name' }
 
@@ -193,7 +194,7 @@ describe('Groups API', () => {
         ownerId: owner.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(owner))
+      getServerSessionMock.mockResolvedValue(createMockSession(owner))
 
       const request = createMockRequest(`/api/groups/${group.id}`, {
         method: 'DELETE',
@@ -211,7 +212,7 @@ describe('Groups API', () => {
         ownerId: owner.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(nonOwner))
+      getServerSessionMock.mockResolvedValue(createMockSession(nonOwner))
 
       const request = createMockRequest(`/api/groups/${group.id}`, {
         method: 'DELETE',

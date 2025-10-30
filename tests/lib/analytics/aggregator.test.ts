@@ -99,12 +99,12 @@ describe('generateDailyAnalyticsSnapshot', () => {
 
     const attendanceArgs = attendanceFindMany.mock.calls;
     expect(attendanceArgs).toHaveLength(2);
-    expect(attendanceArgs[0][0]).toMatchObject({ action: EventAttendanceAction.CHECKED_IN });
-    expect(attendanceArgs[1][0]).toMatchObject({ action: { in: [EventAttendanceAction.CHECKED_IN, EventAttendanceAction.RSVP_CONFIRMED] } });
+    expect(attendanceArgs[0][0].where).toMatchObject({ action: EventAttendanceAction.CHECKED_IN });
+    expect(attendanceArgs[1][0].where).toMatchObject({ action: { in: [EventAttendanceAction.CHECKED_IN, EventAttendanceAction.RSVP_CONFIRMED] } });
 
     const membershipCalls = groupByMembership.mock.calls;
     expect(membershipCalls).toHaveLength(2);
-    expect(membershipCalls[0][0]).toMatchObject({ status: MembershipStatus.active });
-    expect(membershipCalls[1][0]).toMatchObject({ status: MembershipStatus.active });
+    expect(membershipCalls[0][0].where).toMatchObject({ status: MembershipStatus.active });
+    expect(membershipCalls[1][0].where).toMatchObject({ status: MembershipStatus.active });
   });
 });
