@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 
 // feature: group-chat
@@ -83,6 +85,16 @@ export function GroupChatPanel(props: GroupChatPanelProps) {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [creatingThread, setCreatingThread] = useState(false);
+  const [connectionState, setConnectionState] = useState<"connecting" | "online" | "offline">("connecting");
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const selectedConversationIdRef = useRef<string | null>(selectedConversationId);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) || null,
@@ -137,16 +149,30 @@ export function GroupChatPanel(props: GroupChatPanelProps) {
     fetchMessages();
   }, [fetchMessages]);
 
-  useEffect(() => {
-    if (!groupSlug) return;
+  const establishEventStream = useCallback(() => {
+    if (!groupSlug) {
+      return;
+    }
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
     const eventSource = new EventSource(`/api/groups/${groupSlug}/chat/stream`);
+    eventSourceRef.current = eventSource;
+    setConnectionState("connecting");
 
     const handleEvent = (event: MessageEvent) => {
       try {
         const payload: ChatEvent["data"] = JSON.parse(event.data);
         const type = (event as MessageEvent).type;
 
-        if (type === "message:created" && payload.conversationId === selectedConversationId && payload.payload?.message) {
+        if (
+          type === "message:created" &&
+          payload.conversationId === selectedConversationIdRef.current &&
+          payload.payload?.message
+        ) {
           setMessages((current) => {
             const exists = current.some((message) => message.id === payload.payload.message.id);
             if (exists) {
@@ -173,9 +199,26 @@ export function GroupChatPanel(props: GroupChatPanelProps) {
     eventSource.addEventListener("thread:moderated", handleEvent);
     eventSource.addEventListener("conversation:created", handleEvent);
 
+    eventSource.onopen = () => {
+      setConnectionState("online");
+      reconnectAttemptRef.current = 0;
+    };
+
     eventSource.onerror = () => {
+      setConnectionState("offline");
       eventSource.close();
-      setTimeout(fetchConversations, 3000);
+
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+
+      reconnectAttemptRef.current = Math.min(reconnectAttemptRef.current + 1, 5);
+      const delay = Math.min(30000, 1000 * 2 ** reconnectAttemptRef.current);
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        establishEventStream();
+        fetchConversations();
+        fetchThreads();
+      }, delay);
     };
 
     return () => {
@@ -184,8 +227,24 @@ export function GroupChatPanel(props: GroupChatPanelProps) {
       eventSource.removeEventListener("thread:moderated", handleEvent);
       eventSource.removeEventListener("conversation:created", handleEvent);
       eventSource.close();
+      eventSourceRef.current = null;
     };
-  }, [fetchConversations, fetchThreads, groupSlug, selectedConversationId]);
+  }, [fetchConversations, fetchThreads, groupSlug]);
+
+  useEffect(() => {
+    establishEventStream();
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
+  }, [establishEventStream]);
 
   const handleSendMessage = useCallback(async () => {
     if (!selectedConversationId || messageInput.trim().length === 0) {
@@ -205,17 +264,31 @@ export function GroupChatPanel(props: GroupChatPanelProps) {
         }),
       });
 
-      if (response.ok) {
-        setMessageInput("");
-        const data = await response.json();
-        if (data.message) {
-          setMessages((current) => [...current, data.message]);
-        }
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        toast({
+          title: "Nachricht konnte nicht gesendet werden",
+          description: error?.error ?? "Bitte versuche es in Kürze erneut.",
+          variant: "destructive",
+        });
+        return;
       }
+
+      setMessageInput("");
+      const data = await response.json();
+      if (data.message) {
+        setMessages((current) => [...current, data.message]);
+      }
+    } catch (error) {
+      toast({
+        title: "Verbindung unterbrochen",
+        description: "Deine Nachricht wurde nicht gesendet. Prüfe deine Verbindung und versuche es erneut.",
+        variant: "destructive",
+      });
     } finally {
       setSendingMessage(false);
     }
-  }, [groupSlug, messageInput, selectedConversationId]);
+  }, [groupSlug, messageInput, selectedConversationId, toast]);
 
   const handleCreateThread = useCallback(async () => {
     if (threadTitle.trim().length === 0 || threadBody.trim().length === 0) {
@@ -273,6 +346,18 @@ export function GroupChatPanel(props: GroupChatPanelProps) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+      {connectionState !== "online" && (
+        <Alert variant="destructive" className="lg:col-span-2">
+          <AlertTitle>
+            {connectionState === "offline" ? "Verbindung getrennt" : "Verbindung wird aufgebaut"}
+          </AlertTitle>
+          <AlertDescription>
+            {connectionState === "offline"
+              ? "Wir versuchen automatisch, die Chat-Verbindung wiederherzustellen."
+              : "Der Chat stellt gerade eine Verbindung zum Server her."}
+          </AlertDescription>
+        </Alert>
+      )}
       <Card className="h-full">
         <CardHeader>
           <CardTitle>Gruppenchat</CardTitle>

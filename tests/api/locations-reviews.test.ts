@@ -1,21 +1,25 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
+import { vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import * as NextAuth from 'next-auth'
 import { POST as LOC_POST, GET as LOC_GET } from '@/app/api/locations/route'
 import { POST as REVIEW_POST } from '@/app/api/locations/[id]/reviews/route'
 import { testDb } from '@/lib/test-utils/database'
 
-jest.mock('next-auth', () => ({ getServerSession: jest.fn() }))
-jest.mock('@/lib/auth', () => ({ authOptions: {} }))
-const { getServerSession } = require('next-auth')
+vi.mock('next-auth', () => ({ getServerSession: vi.fn() }))
+vi.mock('@/lib/auth', () => ({ authOptions: {} }))
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession)
 
-describe('Location reviews & ratings', () => {
-	beforeEach(() => { jest.clearAllMocks() })
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip
+
+describeIfDatabase('Location reviews & ratings', () => {
+        beforeEach(() => { vi.clearAllMocks() })
 
 	it('creates a location review and updates average rating', async () => {
 		const user = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user.id } })
 
 		// Create a location first
 		const locationData = {
@@ -61,7 +65,7 @@ describe('Location reviews & ratings', () => {
 	it('calculates average rating from multiple reviews', async () => {
 		const user1 = await testDb.createTestUser()
 		const user2 = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user1.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user1.id } })
 
 		// Create a location
 		const locationData = {
@@ -88,7 +92,7 @@ describe('Location reviews & ratings', () => {
 		await REVIEW_POST(review1Req as any, { params: { id: location.id } } as any)
 
 		// Second review from different user
-		getServerSession.mockResolvedValue({ user: { id: user2.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user2.id } })
 		const review2Data = { rating: 3, comment: 'Good but could be better' }
 		const review2Req = new NextRequest(`http://localhost:3000/api/locations/${location.id}/reviews`, {
 			method: 'POST',
@@ -106,7 +110,7 @@ describe('Location reviews & ratings', () => {
 
 	it('prevents duplicate reviews from same user', async () => {
 		const user = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user.id } })
 
 		// Create location
 		const locationData = {

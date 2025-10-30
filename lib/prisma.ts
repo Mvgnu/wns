@@ -1,18 +1,18 @@
 // This is a standard module file - no 'use server' directive here
 import { PrismaClient } from '@prisma/client';
 
-// Add prisma to the NodeJS global type
-declare global {
-  // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
-}
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+};
 
 // Prevent multiple instances of Prisma Client in development
-export const prisma = global.prisma || new PrismaClient({
+export const prisma = globalForPrisma.prisma || new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
 });
 
-if (process.env.NODE_ENV !== 'production') global.prisma = prisma;
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
 
 export default prisma;
 
@@ -107,6 +107,5 @@ if (process.env.SKIP_DATABASE_CALLS === 'true') {
     // This is just a minimal mock to prevent database connection errors during build
   };
   
-  // @ts-ignore - We know this is not a complete implementation
-  global.prisma = mockPrismaClient as PrismaClient;
-} 
+  globalForPrisma.prisma = mockPrismaClient as PrismaClient;
+}

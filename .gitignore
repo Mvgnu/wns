@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -51,6 +52,7 @@ next-env.d.ts
 !app/groups/manage/README.md
 !lib/groups/README.md
 !lib/payments/README.md
+!app/api/payments/README.md
 !components/chat/README.md
 !lib/chat/README.md
 !lib/realtime/README.md

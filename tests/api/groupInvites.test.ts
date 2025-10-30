@@ -1,23 +1,26 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
+import { vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import * as NextAuth from 'next-auth'
 import { testDb } from '@/lib/test-utils/database'
 import { createMockSession } from '@/lib/test-utils'
 import { GET, POST, PUT } from '@/app/api/groups/invites/route'
 
-// Mock NextAuth
-jest.mock('next-auth', () => ({ getServerSession: jest.fn() }))
+vi.mock('next-auth', () => ({ getServerSession: vi.fn() }))
 // Mock authOptions to avoid ESM issues
-jest.mock('@/lib/auth', () => ({ authOptions: {} }))
+vi.mock('@/lib/auth', () => ({ authOptions: {} }))
 
-const { getServerSession } = require('next-auth')
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession)
 
-describe('Group Invites API', () => {
-	beforeEach(() => { jest.clearAllMocks() })
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip
+
+describeIfDatabase('Group Invites API', () => {
+        beforeEach(() => { vi.clearAllMocks() })
 
 	it('returns 401 for unauthorized GET', async () => {
-		getServerSession.mockResolvedValue(null)
+                getServerSessionMock.mockResolvedValue(null)
 		const req = new NextRequest('http://localhost:3000/api/groups/invites')
 		const res = await GET(req)
 		expect(res.status).toBe(401)
@@ -30,7 +33,7 @@ describe('Group Invites API', () => {
 		const group = await testDb.createTestGroup({ ownerId: inviter.id, isPrivate: true })
 
 		// Ensure inviter is in members (owner already connected by helper)
-		getServerSession.mockResolvedValue(createMockSession(inviter))
+                getServerSessionMock.mockResolvedValue(createMockSession(inviter))
 
 		// Create invite
 		const postReq = new NextRequest('http://localhost:3000/api/groups/invites', {
@@ -45,7 +48,7 @@ describe('Group Invites API', () => {
 		expect(invite.invitedUserId).toBe(invited.id)
 
 		// Invited user views received invites
-		getServerSession.mockResolvedValue(createMockSession(invited))
+                getServerSessionMock.mockResolvedValue(createMockSession(invited))
 		const recvReq = new NextRequest(`http://localhost:3000/api/groups/invites?type=received`)
 		const recvRes = await GET(recvReq)
 		expect(recvRes.status).toBe(200)
@@ -54,7 +57,7 @@ describe('Group Invites API', () => {
 		expect(recvData.invites.some((i: any) => i.groupId === group.id && i.invitedUserId === invited.id)).toBe(true)
 
 		// Inviter views sent invites
-		getServerSession.mockResolvedValue(createMockSession(inviter))
+                getServerSessionMock.mockResolvedValue(createMockSession(inviter))
 		const sentReq = new NextRequest(`http://localhost:3000/api/groups/invites?type=sent`)
 		const sentRes = await GET(sentReq)
 		expect(sentRes.status).toBe(200)
@@ -62,7 +65,7 @@ describe('Group Invites API', () => {
 		expect(sentData.invites.some((i: any) => i.groupId === group.id && i.invitedUserId === invited.id)).toBe(true)
 
 		// Invited accepts invite
-		getServerSession.mockResolvedValue(createMockSession(invited))
+                getServerSessionMock.mockResolvedValue(createMockSession(invited))
 		const putReq = new NextRequest('http://localhost:3000/api/groups/invites', {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },

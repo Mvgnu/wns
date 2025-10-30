@@ -1,20 +1,24 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
+import { vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import * as NextAuth from 'next-auth'
 import { POST, GET } from '@/app/api/locations/route'
 import { testDb } from '@/lib/test-utils/database'
 
-jest.mock('next-auth', () => ({ getServerSession: jest.fn() }))
-jest.mock('@/lib/auth', () => ({ authOptions: {} }))
-const { getServerSession } = require('next-auth')
+vi.mock('next-auth', () => ({ getServerSession: vi.fn() }))
+vi.mock('@/lib/auth', () => ({ authOptions: {} }))
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession)
 
-describe('Locations API', () => {
-	beforeEach(() => { jest.clearAllMocks() })
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip
+
+describeIfDatabase('Locations API', () => {
+        beforeEach(() => { vi.clearAllMocks() })
 
 	it('creates a facility location and returns 201 with mapped fields', async () => {
 		const user = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user.id } })
 		const body = {
 			name: 'City Gym',
 			description: 'Modern gym',
@@ -41,7 +45,7 @@ describe('Locations API', () => {
 
 	it('creates a trail location (line-based) and can GET by id', async () => {
 		const user = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user.id } })
 		const body = {
 			name: 'Forest Trail',
 			description: 'Nice route',

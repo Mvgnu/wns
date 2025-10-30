@@ -1,27 +1,30 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
+import { vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import * as NextAuth from 'next-auth'
 import { testDb } from '@/lib/test-utils/database'
 import { createMockSession } from '@/lib/test-utils'
 import { GET, PUT, DELETE } from '@/app/api/events/[id]/route'
 import { POST } from '@/app/api/events/route'
 
-// Mock NextAuth
-jest.mock('next-auth', () => ({
-  getServerSession: jest.fn(),
+vi.mock('next-auth', () => ({
+  getServerSession: vi.fn(),
 }))
 
 // Mock authOptions to avoid ESM issues from @auth/prisma-adapter
-jest.mock('@/lib/auth', () => ({
+vi.mock('@/lib/auth', () => ({
   authOptions: {},
 }))
 
-const { getServerSession } = require('next-auth')
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession)
 
-describe('Events API', () => {
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip
+
+describeIfDatabase('Events API', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   describe('GET /api/events/[id]', () => {
@@ -60,7 +63,7 @@ describe('Events API', () => {
       // Add member to group
       await testDb.createTestGroupMember(group.id, member.id)
 
-      getServerSession.mockResolvedValue(createMockSession(member))
+      getServerSessionMock.mockResolvedValue(createMockSession(member))
 
       const request = new NextRequest(`http://localhost:3000/api/events/${event.id}`)
       const response = await GET(request, { params: Promise.resolve({ id: event.id }) })
@@ -82,7 +85,7 @@ describe('Events API', () => {
         groupId: group.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(nonMember))
+      getServerSessionMock.mockResolvedValue(createMockSession(nonMember))
 
       const request = new NextRequest(`http://localhost:3000/api/events/${event.id}`)
       const response = await GET(request, { params: Promise.resolve({ id: event.id }) })
@@ -106,7 +109,7 @@ describe('Events API', () => {
         isPrivate: false,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(user))
+      getServerSessionMock.mockResolvedValue(createMockSession(user))
 
       const eventData = {
         title: 'Test Event',
@@ -132,7 +135,7 @@ describe('Events API', () => {
     })
 
     it('should return 401 for unauthenticated users', async () => {
-      getServerSession.mockResolvedValue(null)
+      getServerSessionMock.mockResolvedValue(null)
 
       const eventData = {
         title: 'Test Event',
@@ -158,7 +161,7 @@ describe('Events API', () => {
         isPrivate: true,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(nonMember))
+      getServerSessionMock.mockResolvedValue(createMockSession(nonMember))
 
       const eventData = {
         title: 'Test Event',
@@ -183,7 +186,7 @@ describe('Events API', () => {
       const user = await testDb.createTestUser()
       const group = await testDb.createTestGroup({ ownerId: user.id, isPrivate: false })
 
-      getServerSession.mockResolvedValue(createMockSession(user))
+      getServerSessionMock.mockResolvedValue(createMockSession(user))
 
       const eventData = {
         title: 'Paid Event',
@@ -223,7 +226,7 @@ describe('Events API', () => {
         organizerId: organizer.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(organizer))
+      getServerSessionMock.mockResolvedValue(createMockSession(organizer))
 
       const updateData = {
         title: 'Updated Event Title',
@@ -251,7 +254,7 @@ describe('Events API', () => {
         organizerId: organizer.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(nonOrganizer))
+      getServerSessionMock.mockResolvedValue(createMockSession(nonOrganizer))
 
       const updateData = { title: 'Updated Title' }
 
@@ -274,7 +277,7 @@ describe('Events API', () => {
         organizerId: organizer.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(organizer))
+      getServerSessionMock.mockResolvedValue(createMockSession(organizer))
 
       const request = new NextRequest(`http://localhost:3000/api/events/${event.id}`, {
         method: 'DELETE',
@@ -292,7 +295,7 @@ describe('Events API', () => {
         organizerId: organizer.id,
       })
 
-      getServerSession.mockResolvedValue(createMockSession(nonOrganizer))
+      getServerSessionMock.mockResolvedValue(createMockSession(nonOrganizer))
 
       const request = new NextRequest(`http://localhost:3000/api/events/${event.id}`, {
         method: 'DELETE',

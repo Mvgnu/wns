@@ -1,23 +1,26 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
+import { vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import * as NextAuth from 'next-auth'
 import { POST, GET } from '@/app/api/groups/route'
 import { testDb } from '@/lib/test-utils/database'
 
-// Mock NextAuth
-jest.mock('next-auth', () => ({ getServerSession: jest.fn() }))
+vi.mock('next-auth', () => ({ getServerSession: vi.fn() }))
 // Mock authOptions to avoid ESM issues
-jest.mock('@/lib/auth', () => ({ authOptions: {} }))
+vi.mock('@/lib/auth', () => ({ authOptions: {} }))
 
-const { getServerSession } = require('next-auth')
+const getServerSessionMock = vi.mocked(NextAuth.getServerSession)
 
-describe('Groups API - Extended Creation and Filters', () => {
-	beforeEach(() => { jest.clearAllMocks() })
+const describeIfDatabase = process.env.DATABASE_URL ? describe : describe.skip
+
+describeIfDatabase('Groups API - Extended Creation and Filters', () => {
+        beforeEach(() => { vi.clearAllMocks() })
 
 	it('creates a group with extended fields and maps sports[0] to sport', async () => {
 		const owner = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: owner.id, name: owner.name } })
+                getServerSessionMock.mockResolvedValue({ user: { id: owner.id, name: owner.name } })
 
 		const body = {
 			name: 'Advanced Group',
@@ -52,7 +55,7 @@ describe('Groups API - Extended Creation and Filters', () => {
 		const publicGroup = await testDb.createTestGroup({ ownerId: owner.id, isPrivate: false, name: 'Public G', sport: 'running' } as any)
 		const privateGroup = await testDb.createTestGroup({ ownerId: owner.id, isPrivate: true, name: 'Private G', sport: 'cycling' } as any)
 		// As anonymous
-		getServerSession.mockResolvedValue(null)
+                getServerSessionMock.mockResolvedValue(null)
 		let res = await GET(new NextRequest('http://localhost:3000/api/groups'))
 		expect(res.status).toBe(200)
 		let list = await res.json()
@@ -60,7 +63,7 @@ describe('Groups API - Extended Creation and Filters', () => {
 		expect(list.some((g: any) => g.name === 'Private G')).toBe(false)
 		// As member of private group
 		await testDb.createTestGroupMember(privateGroup.id, member.id)
-		getServerSession.mockResolvedValue({ user: { id: member.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: member.id } })
 		res = await GET(new NextRequest('http://localhost:3000/api/groups'))
 		list = await res.json()
 		expect(list.some((g: any) => g.name === 'Private G')).toBe(true)
@@ -68,7 +71,7 @@ describe('Groups API - Extended Creation and Filters', () => {
 
 	it('GET filters by sport', async () => {
 		const user = await testDb.createTestUser()
-		getServerSession.mockResolvedValue({ user: { id: user.id } })
+                getServerSessionMock.mockResolvedValue({ user: { id: user.id } })
 		await testDb.createTestGroup({ ownerId: user.id, isPrivate: false, name: 'Run G', sport: 'running' } as any)
 		await testDb.createTestGroup({ ownerId: user.id, isPrivate: false, name: 'Cycle G', sport: 'cycling' } as any)
 		const res = await GET(new NextRequest('http://localhost:3000/api/groups?sport=running'))

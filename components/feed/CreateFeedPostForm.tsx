@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/components/ui/use-toast';
-import { X, Image, Video, Send, Users, Map, Calendar } from 'lucide-react';
+import { X, Image as ImageIcon, Video, Send, Users, Map, Calendar } from 'lucide-react';
 
 // Types for target selection
 type TargetEntityType = 'user' | 'group' | 'location' | 'event';
@@ -381,7 +381,7 @@ export default function CreateFeedPostForm({
                 if (showVideoInput && !showImageInput) setShowVideoInput(false);
               }}
             >
-              <Image className="h-4 w-4 mr-2" />
+              <ImageIcon className="h-4 w-4 mr-2" />
               {showImageInput ? 'Remove Image' : 'Add Image'}
             </Button>
             
