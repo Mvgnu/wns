@@ -13,3 +13,9 @@
   - 2025-10-31 06:05 UTC: Enabled organizer coupon catalogs with Stripe promotion code sync, checkout validation, and revenue-ledger redemption tracking.
   - 2025-10-31 07:05 UTC: Logged Stripe refunds and disputes with audit tables and chargeback ledger entries, progressing the Dispute & Refund Automation milestone.
   - 2025-10-31 08:05 UTC: Delivered organizer payout scheduling, manual payout requests, and coupon catalog surfaces powering the Organizer Revenue Console milestone.
+  - 2025-10-31 09:05 UTC: Wired Stripe payout webhooks into Prisma so `GroupPayout` statuses, transfer references, and schedule timestamps reflect settlement outcomes with event-level idempotency.
+  - 2025-10-31 10:10 UTC: Added organizer-facing dispute queues with action logging backed by `GroupPaymentDisputeAction`, closing the loop between Stripe evidence deadlines and internal finance workflows.
+  - 2025-10-31 11:05 UTC: Wired Stripe payment success events to membership receipt emails with notification dedupe, confirming checkout and subscription charges for members automatically.
+  - 2025-10-31 12:05 UTC: Enforced membership tier capacity limits in checkout with organizer console telemetry so oversubscribed tiers block new purchases while honoring renewals for existing members.
+  - 2025-10-31 13:05 UTC: Automated membership tier upgrades and downgrades by canceling superseded Stripe subscriptions once replacements activate, preventing double billing while keeping Prisma membership states accurate.
+  - Progress: Tiered membership fulfillment milestone — 2/3 deliverables complete (member caps and automatic subscription transitions shipped; gated content enforcement outstanding).

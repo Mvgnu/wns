@@ -6,11 +6,13 @@ import prisma from '@/lib/prisma'
 import { getStripeClient } from '@/lib/payments/stripe'
 import { findCouponByStripePromotionCode, recordCouponRedemption } from '@/lib/payments/coupons'
 import { upsertPaymentDispute, upsertPaymentRefund } from '@/lib/payments/audit'
+import { sendMembershipReceiptNotification } from '@/lib/payments/receipts'
 import { upsertRevenueEntry } from '@/lib/payments/revenue'
 import {
   MembershipStatus as PrismaMembershipStatus,
   PaymentDisputeStatus,
   PaymentRefundStatus,
+  PayoutStatus,
   RevenueEntryType,
 } from '@prisma/client'
 
@@ -135,6 +137,211 @@ function mapDisputeStatus(status: Stripe.Dispute.Status | null | undefined): Pay
   }
 }
 
+function mapPayoutStatus(status: Stripe.Payout.Status | null | undefined): PayoutStatus {
+  switch (status) {
+    case 'paid':
+      return 'paid'
+    case 'in_transit':
+      return 'in_transit'
+    case 'canceled':
+      return 'canceled'
+    case 'failed':
+      return 'failed'
+    case 'pending':
+    default:
+      return 'pending'
+  }
+}
+
+function readMetadataString(metadata: Stripe.Metadata | null | undefined, key: string): string | null {
+  if (!metadata) {
+    return null
+  }
+
+  const value = metadata[key]
+
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function mergePayoutMetadata(existing: unknown, payout: Stripe.Payout) {
+  const base = (typeof existing === 'object' && existing !== null ? existing : {}) as Record<string, unknown>
+  const arrivalDate = unixToDate(payout.arrival_date)?.toISOString() ?? null
+  const existingStripe =
+    typeof base.stripe === 'object' && base.stripe !== null ? (base.stripe as Record<string, unknown>) : {}
+
+  return {
+    ...base,
+    stripe: {
+      ...existingStripe,
+      payoutType: payout.type ?? null,
+      destinationType: payout.destination_type ?? null,
+      destination: payout.destination ?? null,
+      arrivalDate,
+      balanceTransaction: payout.balance_transaction ?? null,
+      failureCode: payout.failure_code ?? null,
+      failureMessage: payout.failure_message ?? null,
+      statementDescriptor: payout.statement_descriptor ?? null,
+      metadata: payout.metadata ?? {},
+    },
+  }
+}
+
+async function updateScheduleAfterPayout(scheduleId: string | null, payoutCompletedAt: Date | null) {
+  if (!scheduleId) {
+    return
+  }
+
+  const updateData: {
+    lastPayoutAt?: Date | null
+    nextPayoutScheduledAt?: Date | null
+  } = {}
+
+  if (payoutCompletedAt) {
+    updateData.lastPayoutAt = payoutCompletedAt
+    updateData.nextPayoutScheduledAt = null
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    return
+  }
+
+  await prisma.groupPayoutSchedule.updateMany({
+    where: { id: scheduleId },
+    data: updateData,
+  })
+}
+
+async function upsertPayoutFromStripe(eventId: string, payout: Stripe.Payout) {
+  const payoutMetadata = payout.metadata ?? null
+  const payoutIdFromMetadata = readMetadataString(payoutMetadata, 'groupPayoutId')
+  const groupIdFromMetadata = readMetadataString(payoutMetadata, 'groupId')
+  const scheduleIdFromMetadata = readMetadataString(payoutMetadata, 'groupPayoutScheduleId')
+  const transferIdFromMetadata =
+    readMetadataString(payoutMetadata, 'transferId') ??
+    readMetadataString(payoutMetadata, 'stripeTransferId') ??
+    null
+
+  let record = null
+
+  if (payoutIdFromMetadata) {
+    record = await prisma.groupPayout.findUnique({ where: { id: payoutIdFromMetadata } })
+  }
+
+  if (!record && payout.id) {
+    record = await prisma.groupPayout.findUnique({ where: { stripePayoutId: payout.id } })
+  }
+
+  if (!record && transferIdFromMetadata) {
+    record = await prisma.groupPayout.findFirst({ where: { stripeTransferId: transferIdFromMetadata } })
+  }
+
+  if (!record && groupIdFromMetadata) {
+    record = await prisma.groupPayout.findFirst({
+      where: { groupId: groupIdFromMetadata },
+      orderBy: { initiatedAt: 'desc' },
+    })
+  }
+
+  const status = mapPayoutStatus(payout.status)
+  const initiatedAt = unixToDate(payout.created) ?? record?.initiatedAt ?? new Date()
+  const completedAt = status === 'paid' ? unixToDate(payout.arrival_date) ?? new Date() : null
+  const failureReason =
+    status === 'failed'
+      ? payout.failure_message ?? payout.failure_code ?? record?.failureReason ?? 'payout_failed'
+      : null
+  const amountCents = typeof payout.amount === 'number' ? payout.amount : record?.amountCents ?? 0
+  const currency = typeof payout.currency === 'string' ? payout.currency.toUpperCase() : record?.currency ?? 'EUR'
+  const metadataPayload = mergePayoutMetadata(record?.metadata ?? null, payout)
+
+  if (!record) {
+    if (!groupIdFromMetadata) {
+      console.warn(`${logPrefix} payout event missing group context`, { eventId, payoutId: payout.id })
+      return null
+    }
+
+    const createData: Parameters<typeof prisma.groupPayout.create>[0]['data'] = {
+      groupId: groupIdFromMetadata,
+      scheduleId: scheduleIdFromMetadata,
+      amountCents,
+      currency,
+      status,
+      initiatedAt,
+      completedAt,
+      failureReason,
+      stripePayoutId: payout.id ?? null,
+      stripeTransferId: transferIdFromMetadata,
+      stripeLastEventId: eventId,
+      metadata: metadataPayload as any,
+    }
+
+    const created = await prisma.groupPayout.create({
+      data: createData,
+    })
+
+    await updateScheduleAfterPayout(scheduleIdFromMetadata, completedAt)
+
+    return created
+  }
+
+  if (record.stripeLastEventId && record.stripeLastEventId === eventId) {
+    return record
+  }
+
+  const updateData: Parameters<typeof prisma.groupPayout.update>[0]['data'] = {
+    status,
+    initiatedAt,
+    stripeLastEventId: eventId,
+    metadata: metadataPayload as any,
+  }
+
+  if (completedAt) {
+    updateData.completedAt = completedAt
+  } else if (status !== 'paid') {
+    updateData.completedAt = null
+  }
+
+  if (status === 'failed') {
+    updateData.failureReason = failureReason
+  } else if (record.failureReason) {
+    updateData.failureReason = null
+  }
+
+  if (payout.id) {
+    updateData.stripePayoutId = payout.id
+  }
+
+  if (transferIdFromMetadata) {
+    updateData.stripeTransferId = transferIdFromMetadata
+  }
+
+  if (scheduleIdFromMetadata) {
+    updateData.scheduleId = scheduleIdFromMetadata
+  }
+
+  if (amountCents !== record.amountCents) {
+    updateData.amountCents = amountCents
+  }
+
+  if (currency && currency !== record.currency) {
+    updateData.currency = currency
+  }
+
+  await prisma.groupPayout.update({
+    where: { id: record.id },
+    data: updateData,
+  })
+
+  await updateScheduleAfterPayout(scheduleIdFromMetadata ?? record.scheduleId ?? null, completedAt)
+
+  return prisma.groupPayout.findUnique({ where: { id: record.id } })
+}
+
 type MembershipContext = {
   groupId: string | null
   membershipId: string | null
@@ -200,6 +407,7 @@ async function upsertMembershipFromCheckout(eventId: string, session: Stripe.Che
   const groupIdFromMetadata = metadata.groupId ?? null
   const couponIdFromMetadata = metadata.couponId ?? null
   const couponCodeFromMetadata = metadata.couponCode ?? null
+  const descriptionFromMetadata = typeof metadata.description === 'string' ? metadata.description : null
 
   if (!userId) {
     console.warn(`${logPrefix} missing user metadata on checkout.session.completed`, { eventId })
@@ -242,6 +450,21 @@ async function upsertMembershipFromCheckout(eventId: string, session: Stripe.Che
   const now = new Date()
   const expiresAt = calculateExpiration(now, billingPeriod)
 
+  const existingMembership = await prisma.groupMembership.findUnique({
+    where: {
+      groupId_userId: {
+        groupId: resolvedGroupId,
+        userId,
+      },
+    },
+    select: {
+      id: true,
+      tierId: true,
+      stripeSubscriptionId: true,
+      status: true,
+    },
+  })
+
   const membership = await prisma.groupMembership.upsert({
     where: {
       groupId_userId: {
@@ -280,6 +503,8 @@ async function upsertMembershipFromCheckout(eventId: string, session: Stripe.Che
       userId: true,
       status: true,
       startedAt: true,
+      tierId: true,
+      stripeSubscriptionId: true,
     },
   })
 
@@ -289,6 +514,37 @@ async function upsertMembershipFromCheckout(eventId: string, session: Stripe.Che
     status: membership.status,
     joinedAt: membership.startedAt,
   })
+
+  const previousSubscriptionId = existingMembership?.stripeSubscriptionId ?? null
+  const nextSubscriptionId = membership.stripeSubscriptionId ?? null
+
+  if (
+    previousSubscriptionId &&
+    nextSubscriptionId &&
+    previousSubscriptionId !== nextSubscriptionId &&
+    existingMembership?.status !== 'canceled'
+  ) {
+    const stripe = getStripeClient()
+    if (!stripe) {
+      console.warn(`${logPrefix} missing Stripe client for subscription transition`, {
+        eventId,
+        previousSubscriptionId,
+        nextSubscriptionId,
+      })
+    } else {
+      try {
+        // membership_transition: auto-upgrade-cancel-old
+        await stripe.subscriptions.cancel(previousSubscriptionId)
+      } catch (error) {
+        console.error(`${logPrefix} failed to cancel superseded subscription`, {
+          eventId,
+          previousSubscriptionId,
+          nextSubscriptionId,
+          error,
+        })
+      }
+    }
+  }
 
   if (!resolvedCouponId && promotionCode) {
     const couponRecord = await prisma.groupMembershipCoupon.findFirst({
@@ -325,6 +581,25 @@ async function upsertMembershipFromCheckout(eventId: string, session: Stripe.Che
 
     if (resolvedCouponId && result.created) {
       await recordCouponRedemption(resolvedCouponId, eventId)
+    }
+
+    if (result.created) {
+      try {
+        await sendMembershipReceiptNotification({
+          groupId: membership.groupId,
+          membershipId: membership.id,
+          userId: membership.userId,
+          amountCents: amountTotal,
+          currency,
+          occurredAt,
+          stripeEventId: eventId,
+          stripePaymentIntentId: paymentIntentId,
+          couponCode: typeof couponCodeFromMetadata === 'string' ? couponCodeFromMetadata : null,
+          description: descriptionFromMetadata,
+        })
+      } catch (error) {
+        console.error(`${logPrefix} receipt dispatch failed`, { eventId, error })
+      }
     }
   }
 
@@ -470,6 +745,28 @@ async function handleInvoicePayment(eventId: string, invoice: Stripe.Invoice, is
 
       if (couponId && result.created) {
         await recordCouponRedemption(couponId, eventId)
+      }
+
+      if (result.created) {
+        try {
+          await sendMembershipReceiptNotification({
+            groupId: membership.groupId,
+            membershipId: membership.id,
+            userId: membership.userId,
+            amountCents: gross,
+            currency,
+            occurredAt: paidAt ?? new Date(),
+            stripeEventId: eventId,
+            stripeChargeId: chargeId,
+            stripePaymentIntentId: paymentIntentId,
+            invoiceNumber: invoice.number ?? null,
+            hostedInvoiceUrl: invoice.hosted_invoice_url ?? invoice.invoice_pdf ?? null,
+            couponCode: promotionCode,
+            description: invoice.lines.data[0]?.description ?? null,
+          })
+        } catch (error) {
+          console.error(`${logPrefix} receipt dispatch failed`, { eventId, invoiceId: invoice.id, error })
+        }
       }
     }
   }
@@ -716,6 +1013,26 @@ const eventHandlers: Partial<Record<string, (event: Stripe.Event) => Promise<voi
   'charge.dispute.funds_reinstated': async (event) => {
     const dispute = event.data.object as Stripe.Dispute
     await handleDisputeClosure(event.id, dispute)
+  },
+  'payout.created': async (event) => {
+    const payout = event.data.object as Stripe.Payout
+    await upsertPayoutFromStripe(event.id, payout)
+  },
+  'payout.updated': async (event) => {
+    const payout = event.data.object as Stripe.Payout
+    await upsertPayoutFromStripe(event.id, payout)
+  },
+  'payout.paid': async (event) => {
+    const payout = event.data.object as Stripe.Payout
+    await upsertPayoutFromStripe(event.id, payout)
+  },
+  'payout.failed': async (event) => {
+    const payout = event.data.object as Stripe.Payout
+    await upsertPayoutFromStripe(event.id, payout)
+  },
+  'payout.canceled': async (event) => {
+    const payout = event.data.object as Stripe.Payout
+    await upsertPayoutFromStripe(event.id, payout)
   },
 }
 
