@@ -1,11 +1,16 @@
+import { vi } from 'vitest';
 import { calculateGroupScore } from '@/lib/recommendations/group-recommendations'
 
-jest.mock('geolib', () => ({ getDistance: () => 3000 }))
-jest.mock('@/lib/prisma', () => ({
+vi.mock('geolib', () => ({
+  __esModule: true,
+  default: { getDistance: () => 3000 },
+  getDistance: () => 3000
+}))
+vi.mock('@/lib/prisma', () => ({
 	__esModule: true,
 	default: {
-		post: { count: jest.fn().mockResolvedValue(6) },
-		event: { count: jest.fn().mockResolvedValue(2) },
+		post: { count: vi.fn().mockResolvedValue(6) },
+		event: { count: vi.fn().mockResolvedValue(2) },
 	},
 }))
 

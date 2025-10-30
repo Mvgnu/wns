@@ -3,19 +3,30 @@
 // feature: organizer-console
 import { revalidatePath } from 'next/cache';
 import { getServerSession } from 'next-auth';
-import type { MembershipBillingPeriod, SponsorSlotStatus } from '@prisma/client';
+import type {
+  MembershipBillingPeriod,
+  MembershipDiscountType,
+  PayoutFrequency,
+  SponsorSlotStatus
+} from '@prisma/client';
 
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import {
   archiveSponsorSlot,
+  createMembershipCoupon,
   createMembershipTier,
   createSponsorSlot,
+  deactivateMembershipCoupon,
   deleteMembershipTier,
   formatBenefitsInput,
+  requestManualPayout,
   toPriceCents,
+  type CouponInput,
+  toggleGroupPayoutHold,
   updateMembershipTier,
   updateSponsorSlot,
+  upsertGroupPayoutSchedule,
   type TierInput
 } from '@/lib/groups/organizer-console';
 
@@ -23,6 +34,19 @@ type ActionResult = {
   success: boolean;
   error?: string;
 };
+
+function parseOptionalInteger(value: FormDataEntryValue | null): number | null {
+  if (value == null) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(String(value), 10);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  return parsed;
+}
 
 async function resolveOrganizerContext(slug: string) {
   const session = await getServerSession(authOptions);
@@ -127,6 +151,107 @@ export async function deleteTierAction(slug: string, formData: FormData): Promis
     return { success: true };
   } catch (error) {
     console.error('Failed to delete membership tier', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function createCouponAction(slug: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const code = String(formData.get('code') ?? '').trim();
+    if (!code) {
+      return { success: false, error: 'Coupon code is required' };
+    }
+
+    const discountType = (formData.get('discountType') ?? 'percentage') as MembershipDiscountType;
+    const { groupId, userId } = await resolveOrganizerContext(slug);
+
+    const percentageOff = parseOptionalInteger(formData.get('percentageOff'));
+    const amountOffInput = String(formData.get('amountOffCents') ?? '').trim();
+    const amountOffCents = amountOffInput ? toPriceCents(amountOffInput) : null;
+    const maxRedemptions = parseOptionalInteger(formData.get('maxRedemptions'));
+
+    const couponInput: CouponInput = {
+      code,
+      description: String(formData.get('description') ?? '').trim() || null,
+      discountType,
+      percentageOff,
+      amountOffCents,
+      currency: String(formData.get('currency') ?? 'EUR').toUpperCase(),
+      maxRedemptions,
+      startsAt: formData.get('startsAt') ? new Date(String(formData.get('startsAt'))) : null,
+      endsAt: formData.get('endsAt') ? new Date(String(formData.get('endsAt'))) : null
+    };
+
+    await createMembershipCoupon(groupId, userId, couponInput);
+    revalidatePath(`/groups/manage/${slug}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to create membership coupon', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function deactivateCouponAction(slug: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const couponId = String(formData.get('couponId') ?? '');
+    if (!couponId) {
+      return { success: false, error: 'Coupon ID missing' };
+    }
+
+    const { userId } = await resolveOrganizerContext(slug);
+    await deactivateMembershipCoupon(couponId, userId);
+    revalidatePath(`/groups/manage/${slug}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to deactivate membership coupon', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function updatePayoutScheduleAction(slug: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const frequency = (formData.get('frequency') ?? 'weekly') as PayoutFrequency;
+    const destinationAccount = String(formData.get('destinationAccount') ?? '').trim() || null;
+
+    const { groupId, userId } = await resolveOrganizerContext(slug);
+    await upsertGroupPayoutSchedule(groupId, userId, { frequency, destinationAccount });
+
+    revalidatePath(`/groups/manage/${slug}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to update payout schedule', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function togglePayoutHoldAction(slug: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const hold = String(formData.get('hold') ?? 'false') === 'true';
+    const { groupId, userId } = await resolveOrganizerContext(slug);
+
+    await toggleGroupPayoutHold(groupId, userId, hold);
+    revalidatePath(`/groups/manage/${slug}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to toggle payout hold', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function requestManualPayoutAction(slug: string, formData: FormData): Promise<ActionResult> {
+  try {
+    const amount = String(formData.get('amount') ?? '0');
+    const currency = String(formData.get('currency') ?? 'EUR').toUpperCase();
+    const note = String(formData.get('note') ?? '').trim() || null;
+
+    const amountCents = toPriceCents(amount);
+    const { groupId, userId } = await resolveOrganizerContext(slug);
+
+    await requestManualPayout(groupId, userId, { amountCents, currency, note });
+    revalidatePath(`/groups/manage/${slug}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to request payout', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

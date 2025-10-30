@@ -1,11 +1,12 @@
+import { vi } from 'vitest';
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import GroupForm from '@/components/groups/GroupForm'
 
-jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn(), back: jest.fn() }) }))
-jest.mock('@/hooks/useGroups', () => ({
-	useCreateGroup: () => ({ mutate: jest.fn((payload: any, opts: any) => opts?.onSuccess?.({ id: 'g1', ...payload })) }),
-	useUpdateGroup: () => ({ mutate: jest.fn() })
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), back: vi.fn() }) }))
+vi.mock('@/hooks/useGroups', () => ({
+	useCreateGroup: () => ({ mutate: vi.fn((payload: any, opts: any) => opts?.onSuccess?.({ id: 'g1', ...payload })) }),
+	useUpdateGroup: () => ({ mutate: vi.fn() })
 }))
 
 describe('GroupForm', () => {
