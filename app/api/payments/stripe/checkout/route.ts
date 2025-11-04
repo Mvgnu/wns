@@ -1,6 +1,7 @@
 // feature: commerce-checkout
 import crypto from 'node:crypto'
 
+import { type MembershipStatus } from '@prisma/client'
 import { NextResponse, type NextRequest } from 'next/server'
 import { getServerSession } from 'next-auth'
 
@@ -84,6 +85,40 @@ export async function POST(request: NextRequest) {
 
     if (!tier) {
       return NextResponse.json({ error: 'TIER_NOT_FOUND' }, { status: 404 })
+    }
+
+    const existingMembership = await prisma.groupMembership.findUnique({
+      where: {
+        groupId_userId: {
+          groupId: tier.groupId,
+          userId: session.user.id,
+        },
+      },
+      select: { tierId: true, status: true },
+    })
+
+    const alreadyInTier =
+      existingMembership?.tierId === tier.id && existingMembership.status !== 'canceled'
+
+    if (typeof tier.memberLimit === 'number') {
+      // capacity-check: ensure tier member limits block new oversubscriptions while allowing renewals
+      if (tier.memberLimit <= 0 && !alreadyInTier) {
+        return NextResponse.json({ error: 'TIER_AT_CAPACITY' }, { status: 409 })
+      }
+
+      if (!alreadyInTier) {
+        const occupancyStatuses: MembershipStatus[] = ['active', 'past_due']
+        const activeOccupancy = await prisma.groupMembership.count({
+          where: {
+            tierId: tier.id,
+            status: { in: occupancyStatuses },
+          },
+        })
+
+        if (activeOccupancy >= tier.memberLimit) {
+          return NextResponse.json({ error: 'TIER_AT_CAPACITY' }, { status: 409 })
+        }
+      }
     }
 
     let coupon = null as (Awaited<ReturnType<typeof findActiveCouponByCode>> | null)

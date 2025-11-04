@@ -3,6 +3,8 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getServerSession } from 'next-auth';
 
+import type { PaymentDisputeActionType } from '@prisma/client';
+
 import { authOptions } from '@/lib/auth';
 import { getOrganizerConsoleData } from '@/lib/groups/organizer-console';
 import {
@@ -11,6 +13,7 @@ import {
   createTierAction,
   deleteTierAction,
   deactivateCouponAction,
+  recordDisputeActionAction,
   requestManualPayoutAction,
   updateSponsorStatusAction,
   updateTierAction,
@@ -77,6 +80,39 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
   const updatePayoutSchedule = updatePayoutScheduleAction.bind(null, params.slug);
   const togglePayoutHold = togglePayoutHoldAction.bind(null, params.slug);
   const requestManualPayout = requestManualPayoutAction.bind(null, params.slug);
+  const recordDisputeAction = recordDisputeActionAction.bind(null, params.slug);
+
+  const disputeActionOptions = [
+    {
+      value: 'note',
+      label: 'Add internal note',
+      requiresNote: true
+    },
+    {
+      value: 'evidence_submitted',
+      label: 'Confirm evidence submitted to Stripe',
+      requiresNote: false
+    },
+    {
+      value: 'escalated',
+      label: 'Escalate to platform ops',
+      requiresNote: true
+    },
+    {
+      value: 'written_off',
+      label: 'Write off loss',
+      requiresNote: true
+    }
+  ] satisfies Array<{
+    value: PaymentDisputeActionType;
+    label: string;
+    requiresNote: boolean;
+  }>;
+
+  const noteRequirementCopy = disputeActionOptions
+    .filter((option) => option.requiresNote)
+    .map((option) => option.label.toLowerCase())
+    .join(', ');
 
   return (
     <div className="space-y-10">
@@ -396,11 +432,116 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
                   <Label htmlFor="description">Description</Label>
                   <Textarea id="description" name="description" placeholder="Launch promotion details" />
                 </div>
-                <Button type="submit">Create coupon</Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+              <Button type="submit">Create coupon</Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Disputes &amp; chargebacks</CardTitle>
+          <CardDescription>
+            Stay ahead of evidence deadlines and log organizer responses for finance traceability.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {consoleData.disputes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No active disputes right now. Stripe will notify you here when new cases open.</p>
+          ) : (
+            <div className="space-y-4">
+              {consoleData.disputes.map((dispute) => (
+                <div key={dispute.id} className="space-y-3 rounded-lg border p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1 text-sm">
+                      <div className="font-medium text-foreground">
+                        {formatCurrency(dispute.amountCents, dispute.currency)} · {dispute.status.replace(/_/g, ' ')}
+                      </div>
+                      {dispute.reason && (
+                        <div className="text-xs text-muted-foreground">
+                          Reason: {dispute.reason.replace(/_/g, ' ')}
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground">
+                        Opened {dispute.createdAt.toLocaleString()}
+                      </div>
+                      {dispute.evidenceDueAt && (
+                        <div className="text-xs text-muted-foreground">
+                          Evidence due {dispute.evidenceDueAt.toLocaleString()}
+                        </div>
+                      )}
+                      {dispute.latestAction && (
+                        <div className="text-xs text-muted-foreground">
+                          Last action: {dispute.latestAction.actionType.replace(/_/g, ' ')}
+                          {dispute.latestAction.actorName && ` by ${dispute.latestAction.actorName}`}
+                          {' · '}
+                          {dispute.latestAction.createdAt.toLocaleString()}
+                          {dispute.latestAction.note && (
+                            <span className="block text-muted-foreground/80">
+                              Note: {dispute.latestAction.note}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <Badge
+                      variant={
+                        dispute.status === 'needs_response' || dispute.status === 'warning_needs_response'
+                          ? 'destructive'
+                          : 'secondary'
+                      }
+                    >
+                      {dispute.status.replace(/_/g, ' ')}
+                    </Badge>
+                  </div>
+                  <form action={recordDisputeAction} className="space-y-3">
+                    <input type="hidden" name="disputeId" value={dispute.id} />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor={`dispute-action-${dispute.id}`}>Action</Label>
+                        <select
+                          id={`dispute-action-${dispute.id}`}
+                          name="actionType"
+                          className="rounded-md border bg-background px-3 py-2 text-sm"
+                          defaultValue="note"
+                        >
+                          {disputeActionOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          Notes are required for {noteRequirementCopy}; detailed context keeps finance ops in the loop.
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor={`dispute-note-${dispute.id}`}>
+                          Notes
+                          <span className="text-muted-foreground"> (required for most actions)</span>
+                        </Label>
+                        <Textarea
+                          id={`dispute-note-${dispute.id}`}
+                          name="note"
+                          placeholder="Summarize outreach, escalation context, or evidence links"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        Evidence submissions can be tracked here alongside internal notes.
+                      </p>
+                      <Button type="submit" size="sm">
+                        Log response
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
       </section>
 
       <section className="space-y-4">
@@ -420,6 +561,7 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
                 <th className="px-4 py-3 font-medium">Price</th>
                 <th className="px-4 py-3 font-medium">Billing</th>
                 <th className="px-4 py-3 font-medium">Members</th>
+                <th className="px-4 py-3 font-medium">Capacity</th>
                 <th className="px-4 py-3 font-medium">Benefits</th>
                 <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
@@ -427,7 +569,7 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
             <tbody>
               {consoleData.tiers.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-muted-foreground" colSpan={6}>
+                  <td className="px-4 py-4 text-muted-foreground" colSpan={7}>
                     No membership tiers yet. Launch your first tier using the form below.
                   </td>
                 </tr>
@@ -448,6 +590,22 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
                     </td>
                     <td className="px-4 py-3 capitalize">{tier.billingPeriod}</td>
                     <td className="px-4 py-3">{tier.memberCount}</td>
+                    <td className="px-4 py-3">
+                      {tier.memberLimit === null ? (
+                        <span className="text-xs text-muted-foreground">Unlimited</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span>
+                            {tier.memberCount}/{tier.memberLimit}
+                          </span>
+                          {tier.atCapacity ? (
+                            <Badge variant="destructive" className="uppercase">Full</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{tier.availableSlots} open</span>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <ul className="list-disc space-y-1 pl-4 text-xs">
                         {tier.benefits.map((benefit) => (
@@ -497,6 +655,20 @@ export default async function OrganizerConsolePage({ params }: PageProps) {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="price">Price (in {primaryCurrency})</Label>
                 <Input id="price" name="price" placeholder="49" type="number" min="0" step="1" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="memberLimit">
+                  Member limit
+                  <span className="text-muted-foreground"> (optional)</span>
+                </Label>
+                <Input
+                  id="memberLimit"
+                  name="memberLimit"
+                  placeholder="50"
+                  type="number"
+                  min="0"
+                  step="1"
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="currency">Currency</Label>

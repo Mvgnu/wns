@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { google } from 'googleapis';
 import prisma from '@/lib/prisma';
-import { Event, User, Group } from '@prisma/client';
+import { Event, User, Group, NotificationPreferences } from '@prisma/client';
 import { format } from 'date-fns';
 
 // Configure OAuth2 client for Gmail
@@ -53,6 +53,135 @@ async function logEmailNotification(userId: string, email: string, type: string,
   } catch (error) {
     console.error('Error logging email notification:', error);
   }
+}
+
+async function getNotificationPreferences(
+  user: User & { notificationPreferences?: NotificationPreferences | null }
+) {
+  if (user.notificationPreferences) {
+    return user.notificationPreferences;
+  }
+
+  try {
+    const prefs = await prisma.notificationPreferences.findUnique({
+      where: { userId: user.id },
+    });
+
+    return prefs ?? null;
+  } catch (error) {
+    console.error('Error loading notification preferences:', error);
+    return null;
+  }
+}
+
+async function wasNotificationSent(
+  userId: string,
+  type: string,
+  relatedId?: string | null
+) {
+  if (!relatedId) {
+    return false;
+  }
+
+  const existing = await prisma.emailNotificationLog.findFirst({
+    where: {
+      userId,
+      type,
+      relatedId,
+    },
+  });
+
+  return Boolean(existing);
+}
+
+type PaymentReceiptEmailContext = {
+  user: User & { notificationPreferences?: NotificationPreferences | null };
+  groupName: string;
+  groupUrl?: string | null;
+  amountCents: number;
+  currency: string;
+  occurredAt: Date;
+  membershipTierName?: string | null;
+  billingPeriod?: string | null;
+  invoiceNumber?: string | null;
+  paymentIntentId?: string | null;
+  chargeId?: string | null;
+  hostedInvoiceUrl?: string | null;
+  couponCode?: string | null;
+  description?: string | null;
+  relatedId?: string | null;
+};
+
+export async function sendPaymentReceiptEmail(context: PaymentReceiptEmailContext) {
+  if (!context.user.email) {
+    return;
+  }
+
+  if (await wasNotificationSent(context.user.id, 'payment_receipt', context.relatedId)) {
+    return;
+  }
+
+  const preferences = await getNotificationPreferences(context.user);
+
+  if (preferences && !preferences.emailNotifications) {
+    return;
+  }
+
+  const transporter = await createTransporter();
+
+  const formattedAmount = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: context.currency.toUpperCase(),
+  }).format(context.amountCents / 100);
+
+  const formattedDate = format(context.occurredAt, 'MMMM d, yyyy h:mm a');
+  const membershipLabel = context.membershipTierName
+    ? `${context.membershipTierName}${context.billingPeriod ? ` (${context.billingPeriod})` : ''}`
+    : null;
+
+  const receiptDetails = [
+    `<li><strong>Amount:</strong> ${formattedAmount}</li>`,
+    `<li><strong>Date:</strong> ${formattedDate}</li>`,
+    membershipLabel ? `<li><strong>Membership:</strong> ${membershipLabel}</li>` : null,
+    context.invoiceNumber ? `<li><strong>Invoice #:</strong> ${context.invoiceNumber}</li>` : null,
+    context.chargeId ? `<li><strong>Charge:</strong> ${context.chargeId}</li>` : null,
+    context.paymentIntentId ? `<li><strong>Payment Intent:</strong> ${context.paymentIntentId}</li>` : null,
+    context.couponCode ? `<li><strong>Coupon:</strong> ${context.couponCode}</li>` : null,
+  ].filter(Boolean);
+
+  const detailList = receiptDetails.join('');
+
+  const ctaSection = context.hostedInvoiceUrl
+    ? `<p><a href="${context.hostedInvoiceUrl}" style="display: inline-block; padding: 10px 20px; background-color: #4a7aff; color: white; text-decoration: none; border-radius: 5px;">View invoice</a></p>`
+    : context.groupUrl
+      ? `<p><a href="${context.groupUrl}" style="display: inline-block; padding: 10px 20px; background-color: #4a7aff; color: white; text-decoration: none; border-radius: 5px;">Manage membership</a></p>`
+      : '';
+
+  const descriptionBlock = context.description
+    ? `<p style="margin-top: 15px;">${context.description}</p>`
+    : '';
+
+  const mailOptions = {
+    from: `Community Site <${process.env.EMAIL_FROM}>`,
+    to: context.user.email,
+    subject: `Receipt for your ${context.groupName} membership`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Thank you for your purchase</h2>
+        <p>Hello ${context.user.name || 'there'},</p>
+        <p>This email confirms your recent payment to ${context.groupName}.</p>
+        <ul style="padding-left: 18px;">${detailList}</ul>
+        ${descriptionBlock}
+        ${ctaSection}
+        <p style="color: #888; font-size: 12px; margin-top: 30px;">
+          Keep this receipt for your records. Update your preferences anytime from your account settings.
+        </p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+  await logEmailNotification(context.user.id, context.user.email, 'payment_receipt', context.relatedId ?? undefined);
 }
 
 // Send event reminder email

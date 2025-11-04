@@ -207,4 +207,92 @@ describeIfDatabase('Stripe checkout API', () => {
     const refreshedCoupon = await prisma.groupMembershipCoupon.findUnique({ where: { id: coupon.id } })
     expect(refreshedCoupon?.stripePromotionCodeId).toBe('promo_123')
   })
+
+  it('blocks checkout when the tier has reached its member limit', async () => {
+    const organizer = await testDb.createTestUser()
+    const group = await testDb.createTestGroup({ ownerId: organizer.id })
+    const tier = await testDb.createTestMembershipTier(group.id, {
+      memberLimit: 1,
+      billingPeriod: 'month',
+    })
+
+    const existingMember = await testDb.createTestUser()
+    await testDb.createTestGroupMember(group.id, existingMember.id)
+    await prisma.groupMembership.create({
+      data: {
+        groupId: group.id,
+        userId: existingMember.id,
+        tierId: tier.id,
+        status: 'active',
+        startedAt: new Date(),
+        renewedAt: new Date(),
+      },
+    })
+
+    const newUser = await testDb.createTestUser()
+    getServerSessionMock.mockResolvedValue(createMockSession(newUser))
+
+    vi.mocked(getStripeClient).mockReturnValue({
+      checkout: { sessions: { create: vi.fn() } },
+    } as any)
+
+    const request = new NextRequest('http://localhost:3000/api/payments/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tierId: tier.id }),
+    })
+
+    const response = await POST(request)
+    expect(response.status).toBe(409)
+
+    const payload = await response.json()
+    expect(payload.error).toBe('TIER_AT_CAPACITY')
+  })
+
+  it('allows existing members of the tier to renew even when at capacity', async () => {
+    const user = await testDb.createTestUser()
+    const group = await testDb.createTestGroup({ ownerId: user.id })
+    const tier = await testDb.createTestMembershipTier(group.id, {
+      memberLimit: 1,
+      billingPeriod: 'month',
+    })
+
+    await testDb.createTestGroupMember(group.id, user.id)
+    await prisma.groupMembership.create({
+      data: {
+        groupId: group.id,
+        userId: user.id,
+        tierId: tier.id,
+        status: 'active',
+        startedAt: new Date(),
+        renewedAt: new Date(),
+      },
+    })
+
+    getServerSessionMock.mockResolvedValue(createMockSession(user))
+
+    const createSessionMock = vi.fn().mockResolvedValue({ id: 'cs_capacity', url: 'https://checkout.stripe.com/renew' })
+    vi.mocked(getStripeClient).mockReturnValue({
+      checkout: { sessions: { create: createSessionMock } },
+    } as any)
+
+    vi.mocked(syncTierWithStripe).mockResolvedValue({
+      productId: 'prod_capacity',
+      priceId: 'price_capacity',
+      skipped: false,
+    })
+
+    const request = new NextRequest('http://localhost:3000/api/payments/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tierId: tier.id }),
+    })
+
+    const response = await POST(request)
+    expect(response.status).toBe(200)
+
+    const data = await response.json()
+    expect(data.sessionId).toBe('cs_capacity')
+    expect(createSessionMock).toHaveBeenCalled()
+  })
 })
